@@ -167,3 +167,11 @@ def test_compare_with_real_data(client: TestClient):
     body = r.json()
     assert body["model_a"] == "anthropic/sonnet"
     assert "per_tag" in body
+    # Per-tag entries must expose avg_score for both models. TagComparison
+    # has these fields, but _comparison_to_dict was dropping them — HTTP
+    # clients could see pass rates but not average scores, which the CLI's
+    # rich-rendered table does include.
+    assert body["per_tag"], "expected at least one per-tag entry"
+    for tc in body["per_tag"]:
+        assert "a_avg_score" in tc, f"a_avg_score missing from per_tag entry: {tc}"
+        assert "b_avg_score" in tc, f"b_avg_score missing from per_tag entry: {tc}"
