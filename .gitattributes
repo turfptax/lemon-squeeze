@@ -1,0 +1,16 @@
+# Normalize line endings cross-platform. Stored as LF in the repo; checked out
+# however the local platform prefers. Stops the "LF will be replaced by CRLF"
+# warning chorus on Windows commits.
+* text=auto eol=lf
+
+# Binary files — never normalize.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.db binary
+*.sqlite* binary
+*.joblib binary
+*.pyc binary
