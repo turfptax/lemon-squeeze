@@ -226,6 +226,44 @@ def test_round_trip_preserves_char_count_of_zero(tmp_path: Path):
     assert p.char_count == 0
 
 
+def test_round_trip_preserves_rubric_hash(tmp_path: Path):
+    """Evaluation.rubric_hash (added with staleness detection) must survive
+    export+import. Without it, imported evals get NULL hash and are treated
+    as 'up-to-date' forever even when the rubric YAML has been edited on
+    the importing machine, breaking staleness detection silently."""
+    # Seed two evals with non-trivial rubric_hash values.
+    with get_session() as s:
+        p = Prompt(content="x", content_hash="rh-test", char_count=1, source="test")
+        s.add(p); s.flush()
+        m = Model(name="rh/m", provider="test", local=True)
+        s.add(m); s.flush()
+        run = Run(prompt_id=p.id, model_id=m.id, response="y")
+        s.add(run); s.flush()
+        s.add(Evaluation(
+            run_id=run.id, rubric="rh_check",
+            rubric_hash="a" * 64,
+            score=1.0, passed=True, scored_by="auto",
+        ))
+        s.add(Evaluation(
+            run_id=run.id, rubric="other_rubric",
+            rubric_hash="b" * 64,
+            score=0.5, passed=False, scored_by="llm",
+        ))
+
+    export_to_dir(tmp_path / "out")
+    _truncate_all()
+    import_from_dir(tmp_path / "out")
+
+    with get_session() as s:
+        evals = list(s.scalars(select(Evaluation)).all())
+    by_rubric = {e.rubric: e for e in evals}
+    assert by_rubric["rh_check"].rubric_hash == "a" * 64, (
+        "rubric_hash silently dropped during export+import — staleness "
+        "detection would always treat re-imported evals as up-to-date"
+    )
+    assert by_rubric["other_rubric"].rubric_hash == "b" * 64
+
+
 def test_import_handles_naive_iso_timestamps(tmp_path: Path):
     """Round-trip should not crash on the naive datetime path —
     UTCDateTime coerces incoming naive datetimes to UTC."""

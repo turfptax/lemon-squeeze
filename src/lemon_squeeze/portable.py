@@ -221,6 +221,11 @@ def _eval_to_dict(e: Evaluation, run_export_ids: dict[int, str]) -> dict[str, An
     return {
         "run_export_id": run_export_ids.get(e.run_id),
         "rubric": e.rubric,
+        # rubric_hash is the SHA-256 of (judge_kind, judge_config,
+        # applies_to_tags) at the time the eval was written. Round-tripping
+        # it preserves staleness detection across machines: an importing host
+        # whose rubric YAML differs will see the imported evals as stale.
+        "rubric_hash": e.rubric_hash,
         "score": e.score,
         "passed": e.passed,
         "scored_by": e.scored_by,
@@ -445,6 +450,7 @@ def import_from_dir(in_dir: Path) -> ImportReport:
                 Evaluation(
                     run_id=run_id,
                     rubric=rec.get("rubric", "unknown"),
+                    rubric_hash=rec.get("rubric_hash"),
                     score=rec.get("score", 0.0),
                     passed=rec.get("passed"),
                     scored_by=rec.get("scored_by", "imported"),
