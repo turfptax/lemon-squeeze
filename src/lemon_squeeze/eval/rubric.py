@@ -154,11 +154,20 @@ def evaluate_runs(
                 else:
                     stale_run_ids.append(rid)
 
-            # Delete stale rows so we can re-score cleanly.
+            # Delete stale rows so we can re-score cleanly. Filter BOTH on
+            # the run_ids that had a stale eval AND on the rubric_hash being
+            # non-NULL and not matching current — otherwise, if a run has
+            # multiple evals for the same rubric (legal via skip_existing=False
+            # / --force append mode) and they're mixed up-to-date + stale, the
+            # broader delete would wipe the up-to-date ones too. Then the
+            # run is in `up_to_date` so the main loop skips it, and we'd be
+            # left with no eval at all for that run.
             if stale_run_ids:
                 del_stale = delete(Evaluation).where(
                     Evaluation.rubric == rubric.name,
                     Evaluation.run_id.in_(stale_run_ids),
+                    Evaluation.rubric_hash.is_not(None),
+                    Evaluation.rubric_hash != current_hash,
                 )
                 result = session.execute(del_stale)
                 report.stale_replaced = result.rowcount or 0

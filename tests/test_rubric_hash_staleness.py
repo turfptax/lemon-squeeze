@@ -172,3 +172,57 @@ def test_replace_existing_takes_precedence_over_staleness():
     assert report.evaluations_written == 1
     # stale_replaced doesn't count because we didn't compare hashes.
     assert report.stale_replaced == 0
+
+
+def test_stale_delete_does_not_drop_concurrent_up_to_date_evals():
+    """When a run has BOTH a stale eval AND an up-to-date eval for the same
+    rubric (legitimate via skip_existing=False / --force append mode), the
+    stale-delete must NOT wipe the up-to-date row.
+
+    Without the fix: delete WHERE rubric=NAME AND run_id IN (stale_ids)
+    wipes everything, then the run is in up_to_date so no fresh eval is
+    written, so the run loses all of its evals."""
+    rid = _seed_one_run_with_response("hello world")
+
+    # v1 is up-to-date with the current rubric.
+    current = Rubric(name="mixed_check", description="", judge_kind="contains",
+                     judge_config={"all_of": ["world"]})
+
+    # Pre-populate two evals for the same (run, rubric):
+    #   * one with current_hash (up-to-date)
+    #   * one with a stale hash (different)
+    with get_session() as s:
+        s.add(Evaluation(
+            run_id=rid, rubric="mixed_check",
+            rubric_hash=current.config_hash(),
+            score=1.0, passed=True, scored_by="auto",
+        ))
+        s.add(Evaluation(
+            run_id=rid, rubric="mixed_check",
+            rubric_hash="0" * 64,  # bogus stale hash
+            score=0.5, passed=False, scored_by="auto",
+        ))
+
+    # Re-score with the current rubric.
+    report = evaluate_runs(current)
+
+    # Bug: stale_replaced would be 2 (both evals deleted) and the up-to-date
+    # one would be lost. With the fix: only the stale row is deleted.
+    with get_session() as s:
+        remaining = s.scalars(
+            select(Evaluation).where(Evaluation.run_id == rid)
+        ).all()
+
+    # The up-to-date row must survive.
+    up_to_date_remaining = [e for e in remaining
+                             if e.rubric_hash == current.config_hash()]
+    assert len(up_to_date_remaining) >= 1, (
+        "up-to-date eval was wiped by the stale-delete query"
+    )
+
+    # The stale row must be gone.
+    stale_remaining = [e for e in remaining if e.rubric_hash == "0" * 64]
+    assert len(stale_remaining) == 0, "stale eval was not deleted"
+
+    # Counter accuracy: we replaced exactly 1 stale row.
+    assert report.stale_replaced == 1
