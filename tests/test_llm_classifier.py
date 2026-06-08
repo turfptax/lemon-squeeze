@@ -146,3 +146,52 @@ def test_http_failure_returns_empty_predictions():
     with _patch_httpx_error(httpx.ConnectError("nope")):
         preds = c.predict("p")
     assert preds == []
+
+
+def _httpx_response_raw(body: dict) -> MagicMock:
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = body
+    resp.raise_for_status = MagicMock()
+    return resp
+
+
+def test_predict_handles_missing_choices_in_api_body():
+    """Servers occasionally return 200 OK with a body that's missing the
+    `choices` key (proxy issues, edge cases). predict() must not propagate
+    the KeyError — it would crash the entire classify_unlabeled pass on a
+    single bad response. Should return [] gracefully like the other failure
+    modes."""
+    _seed_taxonomy("coding")
+    c = LLMClassifier(provider="lm_studio")
+    with patch("lemon_squeeze.classification.llm.httpx.Client") as Client:
+        Client.return_value.__enter__.return_value.post.return_value = (
+            _httpx_response_raw({"error": "rate_limited"})
+        )
+        # Without the fix this raises KeyError("choices")
+        preds = c.predict("p")
+    assert preds == []
+
+
+def test_predict_handles_empty_choices_array():
+    _seed_taxonomy("coding")
+    c = LLMClassifier(provider="lm_studio")
+    with patch("lemon_squeeze.classification.llm.httpx.Client") as Client:
+        Client.return_value.__enter__.return_value.post.return_value = (
+            _httpx_response_raw({"choices": []})
+        )
+        # Without the fix this raises IndexError
+        preds = c.predict("p")
+    assert preds == []
+
+
+def test_predict_handles_missing_message_content():
+    _seed_taxonomy("coding")
+    c = LLMClassifier(provider="lm_studio")
+    with patch("lemon_squeeze.classification.llm.httpx.Client") as Client:
+        Client.return_value.__enter__.return_value.post.return_value = (
+            _httpx_response_raw({"choices": [{"finish_reason": "length"}]})
+        )
+        # Without the fix this raises KeyError("message")
+        preds = c.predict("p")
+    assert preds == []

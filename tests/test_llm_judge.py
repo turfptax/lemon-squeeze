@@ -130,6 +130,21 @@ def test_judge_falls_back_to_threshold_when_passed_is_null():
     )
 
 
+def test_judge_handles_malformed_chat_client_response():
+    """ChatClient.chat reads data['choices'][0]['message']['content'] without
+    guard; a 200 OK body with missing choices / empty choices / missing
+    message will raise KeyError or IndexError. LLMJudge.evaluate caught
+    only httpx.HTTPError, so one bad response would crash evaluate_runs."""
+    j = LLMJudge(rubric_description="x", provider="lm_studio", pass_threshold=4)
+    with patch("lemon_squeeze.eval.judges.llm_judge.ChatClient") as Client:
+        Client.return_value.chat.side_effect = IndexError("list index out of range")
+        # Should not raise.
+        v = j.evaluate("p", "r")
+    assert v.score == 0.0
+    assert v.passed is None
+    assert "malformed" in (v.notes or "")
+
+
 def test_judge_explicit_passed_false_wins_over_threshold():
     """If the LLM explicitly says passed=false, respect it even if score is high.
     The bug fix must not change this — only the null case falls through."""

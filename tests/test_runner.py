@@ -96,6 +96,24 @@ def test_execute_run_with_system_records_system_in_metadata():
     assert run.run_metadata == {"system": "be terse"}
 
 
+def test_execute_run_records_indexerror_as_parse_error():
+    """ChatClient.chat reads data['choices'][0] without guard. If a 200 OK
+    response comes back with `choices: []`, IndexError fires. Previously
+    execute_run caught (KeyError, ValueError, TypeError) but missed
+    IndexError, so the whole batch would crash on a single bad response."""
+    pid, mid = _seed_prompt_and_model()
+    with get_session() as s:
+        prompt = s.get(Prompt, pid)
+        model = s.get(Model, mid)
+    with patch("lemon_squeeze.eval.runner.ChatClient") as cls:
+        cls.return_value.chat.side_effect = IndexError("list index out of range")
+        # Should not raise — should record as parse error on the run row.
+        run = execute_run(prompt, model)
+    assert run.error is not None
+    assert "parse_error" in run.error
+    assert "IndexError" in run.error
+
+
 def test_execute_run_merges_extra_metadata():
     pid, mid = _seed_prompt_and_model()
     with get_session() as s:

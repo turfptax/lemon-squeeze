@@ -49,7 +49,13 @@ class LLMClassifier(Classifier):
         allowed = self._allowed_tags()
         try:
             raw = self._call(prompt, allowed)
-        except (httpx.HTTPError, ValueError):
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
+            # KeyError / IndexError catch malformed response shapes (missing
+            # `choices`, empty array, missing `message.content` — all seen in
+            # the wild from proxies / rate-limited responses / odd local
+            # models). Without these, one bad response would crash an entire
+            # `classify_unlabeled` pass. TypeError covers an unexpected
+            # non-dict body. ValueError covers bogus JSON in resp.json().
             return []
         return self._parse(raw, allowed)
 

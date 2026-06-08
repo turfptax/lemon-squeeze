@@ -94,7 +94,11 @@ def execute_run(
         run.cost_usd = result.cost_usd
     except httpx.HTTPError as e:
         run.error = f"http_error: {e}"
-    except (KeyError, ValueError, TypeError) as e:
+    except (KeyError, IndexError, ValueError, TypeError) as e:
+        # IndexError covers the case where the API returns 200 OK with an
+        # empty `choices` array — ChatClient.chat would IndexError on
+        # `data["choices"][0]`. Without catching it here, the whole batch
+        # crashes on a single odd response.
         run.error = f"parse_error: {e!r}"
 
     with get_session() as session:

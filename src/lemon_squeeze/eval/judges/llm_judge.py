@@ -80,6 +80,17 @@ class LLMJudge(Judge):
             return JudgeVerdict(
                 score=0.0, passed=None, notes=f"judge call failed: {e}", judge_model=self.model
             )
+        except (KeyError, IndexError, ValueError, TypeError) as e:
+            # ChatClient.chat reads `data["choices"][0]["message"]["content"]`
+            # without guard; a 200 OK body with missing choices / empty
+            # choices / missing message would propagate KeyError/IndexError
+            # here and crash evaluate_runs on a single bad LLM call.
+            return JudgeVerdict(
+                score=0.0,
+                passed=None,
+                notes=f"judge response malformed: {e!r}",
+                judge_model=self.model,
+            )
 
         parsed = _parse_json(result.text)
         if parsed is None:
