@@ -57,6 +57,36 @@ def test_demo_outputs_router_picks_cheap_for_math():
     assert result.scorecards_with_pick >= 1
 
 
+def test_run_demo_restores_caller_state_on_return():
+    """run_demo() must not permanently hijack the caller's LEMON_DB_PATH
+    or settings.db_path. Library users should be able to call it mid-session
+    and continue with their original DB pointer."""
+    import os
+
+    import lemon_squeeze as lemon
+
+    prev_env = os.environ.get("LEMON_DB_PATH")
+    prev_db_path = lemon.settings.db_path
+
+    try:
+        run_demo(quiet=True)
+        # After return, both surfaces should match what they were before.
+        assert os.environ.get("LEMON_DB_PATH") == prev_env, (
+            "LEMON_DB_PATH was hijacked by run_demo"
+        )
+        assert lemon.settings.db_path == prev_db_path, (
+            "settings.db_path was hijacked by run_demo"
+        )
+    finally:
+        # Belt-and-suspenders: explicit restore so a failing assertion doesn't
+        # corrupt the rest of the test session.
+        if prev_env is None:
+            os.environ.pop("LEMON_DB_PATH", None)
+        else:
+            os.environ["LEMON_DB_PATH"] = prev_env
+        lemon.settings.db_path = prev_db_path
+
+
 def test_examples_library_demo_still_callable():
     """The thin wrapper script should still work — defends against people
     cargo-culting that path from the old README."""

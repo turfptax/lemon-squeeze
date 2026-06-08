@@ -35,9 +35,19 @@ def run_demo(*, quiet: bool = False) -> DemoResult:
 
     Set `quiet=True` to suppress the step-by-step prints (useful in tests).
     Returns a `DemoResult` regardless. The temp DB is left in place for
-    inspection — its path is in the return value.
+    inspection (its path is in the return value), but the caller's
+    `LEMON_DB_PATH`, `settings.db_path`, and engine cache are restored
+    before this returns. So library users can call `run_demo()` mid-session
+    without it hijacking their DB pointer for the rest of the process.
     """
     log = (lambda *_a, **_k: None) if quiet else print
+
+    import lemon_squeeze as lemon
+    from lemon_squeeze.db.session import _sessionmaker, get_engine
+
+    # Snapshot caller state so we can restore on the way out.
+    prev_env = os.environ.get("LEMON_DB_PATH")
+    prev_db_path = lemon.settings.db_path
 
     # --- 1. Fresh DB ----------------------------------------------------------
     tmp = Path(tempfile.mkdtemp(prefix="lemon-demo-"))
@@ -45,12 +55,32 @@ def run_demo(*, quiet: bool = False) -> DemoResult:
     os.environ["LEMON_DB_PATH"] = str(db_path)
     log(f"[1] DB at {db_path}\n")
 
-    import lemon_squeeze as lemon
-    from lemon_squeeze.db.session import _sessionmaker, get_engine
-
     lemon.settings.db_path = db_path
     get_engine.cache_clear(); _sessionmaker.cache_clear()
     lemon.init_db()
+    try:
+        return _run_demo_body(lemon, db_path, log)
+    finally:
+        # Restore caller state regardless of success/failure.
+        if prev_env is None:
+            os.environ.pop("LEMON_DB_PATH", None)
+        else:
+            os.environ["LEMON_DB_PATH"] = prev_env
+        lemon.settings.db_path = prev_db_path
+        get_engine.cache_clear(); _sessionmaker.cache_clear()
+        # Bust any cached aggregations from the demo run AND make sure the
+        # next sessionmaker (built lazily on first get_session call) has the
+        # after_flush invalidation hook installed. Without this, caller's
+        # subsequent writes to their original DB wouldn't invalidate the
+        # cache, so router/report calls would serve stale demo results.
+        from lemon_squeeze.cache import aggregations_cache, install_invalidation_hooks
+        aggregations_cache().bump_version()
+        install_invalidation_hooks()
+
+
+def _run_demo_body(lemon, db_path: Path, log) -> DemoResult:
+    """The actual demo flow, factored out so `run_demo` can wrap it in
+    try/finally state restoration without one giant indented block."""
 
     # --- 2. Seed prompts ------------------------------------------------------
     from sqlalchemy import select
