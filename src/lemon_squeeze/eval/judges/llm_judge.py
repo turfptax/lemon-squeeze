@@ -93,7 +93,16 @@ class LLMJudge(Judge):
             score = float(parsed.get("score", 0))
         except (TypeError, ValueError):
             score = 0.0
-        passed = bool(parsed.get("passed", score >= self.pass_threshold))
+        # `dict.get(key, default)` only fires `default` when the key is
+        # missing, not when its value is null. LLMs sometimes return
+        # `{"score": 5, "passed": null}`; without this guard, bool(None)
+        # is False and a high-score response wrongly reads as failing.
+        # Explicit true/false from the LLM still wins.
+        passed_raw = parsed.get("passed")
+        if passed_raw is None:
+            passed = score >= self.pass_threshold
+        else:
+            passed = bool(passed_raw)
         return JudgeVerdict(
             score=score,
             passed=passed,

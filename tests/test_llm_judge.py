@@ -108,3 +108,39 @@ def test_judge_uses_correct_default_provider_based_on_settings():
         assert j2.provider == "lm_studio"
     finally:
         settings.openrouter_api_key = saved
+
+
+def test_judge_falls_back_to_threshold_when_passed_is_null():
+    """An LLM returning `{"score": 5, "passed": null}` shouldn't get
+    passed=False. `dict.get("passed", default)` only fires the default when
+    the key is MISSING; if the value is explicitly null, get returns None
+    and bool(None) is False — wrongly flipping a high-score response to
+    failing. The intent is to fall back to the score >= pass_threshold
+    heuristic in this case."""
+    j = LLMJudge(rubric_description="x", provider="lm_studio", pass_threshold=4)
+    with patch("lemon_squeeze.eval.judges.llm_judge.ChatClient") as Client:
+        Client.return_value.chat.return_value = _chat(
+            '{"score": 5, "passed": null, "reasoning": "good answer"}'
+        )
+        v = j.evaluate("p", "r")
+    assert v.score == 5.0
+    assert v.passed is True, (
+        f"score 5 >= threshold 4 with passed=null should infer passed=True; "
+        f"got {v.passed!r}"
+    )
+
+
+def test_judge_explicit_passed_false_wins_over_threshold():
+    """If the LLM explicitly says passed=false, respect it even if score is high.
+    The bug fix must not change this — only the null case falls through."""
+    j = LLMJudge(rubric_description="x", provider="lm_studio", pass_threshold=4)
+    with patch("lemon_squeeze.eval.judges.llm_judge.ChatClient") as Client:
+        Client.return_value.chat.return_value = _chat(
+            '{"score": 5, "passed": false, "reasoning": "looks fine but"}'
+        )
+        v = j.evaluate("p", "r")
+    assert v.score == 5.0
+    assert v.passed is False, (
+        "explicit passed=false from the LLM must override the score-threshold "
+        "fallback; got passed=True"
+    )
