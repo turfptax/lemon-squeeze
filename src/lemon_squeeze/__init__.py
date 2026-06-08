@@ -30,7 +30,7 @@ The DB path comes from `LEMON_DB_PATH` in your `.env` (default: `./data/lemon.db
 """
 from __future__ import annotations
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 
 # Core data plumbing
 from lemon_squeeze.config import settings

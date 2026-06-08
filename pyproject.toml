@@ -1,6 +1,6 @@
 [project]
 name = "lemon-squeeze"
-version = "0.2.2"
+version = "0.2.3"
 description = "Model performance harness for benchmarking local & remote LLMs across prompt types."
 readme = "README.md"
 requires-python = ">=3.11"

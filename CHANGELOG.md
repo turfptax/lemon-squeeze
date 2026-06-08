@@ -2,11 +2,23 @@
 
 All notable changes to Lemon Squeeze. Dates are local (project lives on one machine).
 
-## [Unreleased]
+## [0.2.3] — 2026-06-08
+
+The onboarding command + 7 review-fixes. Project moved under version control with the v0.2.3 cycle (initial commit + per-tick attributed commits going forward). After landing `lemon demo` and the git workflow, a careful-review pattern produced seven real production bugs in seven consecutive ticks of reading existing modules. Each had been silently in production since the feature that introduced it.
 
 ### Added
 
 - **`lemon demo` — zero-config offline showcase**. New CLI command that walks the full pipeline (fresh DB → seed → classify → register two fake models → mocked fan-out → score → compare → router recommendations → executive report) using mocked LLM responses so it runs anywhere with no API keys. Demonstrates the core value proposition: math tag picks `cheap/small-3b` ($0.00010/run, 100% pass), coding tag picks `premium/big-70b`. Logic lives in `lemon_squeeze.demo.run_demo`; `examples/library_demo.py` now thinly delegates so the script and the CLI command produce identical output. 5 tests cover the summary dataclass, the persisted DB, the CLI invocation, the scorecard outcome, and that the library script still works.
+
+### Fixed
+
+- **`/compare` HTTP endpoint dropped `a_avg_score` and `b_avg_score`** from per-tag entries. CLI's rich-rendered compare table showed them; HTTP clients couldn't see them. Same class as the portable.py drop below: a serializer that didn't keep up with its dataclass.
+- **`execute_run` polluted `Run.run_metadata` with `{"system": None}`** on every row because the dict-construction `{"system": system, **(extra_metadata or {})} or None` always had the "system" key, making the `or None` fall-through dead code. Net: every Run in current usage carried a no-info dict, breaking `WHERE run_metadata IS NOT NULL` filters and cluttering exports.
+- **`bench` cross-contamination across benches with overlapping filenames.** `_bench_prompt_ids` filtered by `source_ref.startswith(filename)`, but `SeedFileIngester` sets source_ref to `<filename>:<idx>` with no path. Two benches sharing filenames (likely if a user copied the starter bench layout) each saw the union of both. Fixed by adding a `metadata_overlay` kwarg to `SeedFileIngester`, having `bench.load` pass `{"lemon_bench_dir": <resolved-posix-path>}`, and filtering by that marker.
+- **`portable.py` import dropped `Prompt.ingested_at`.** Export emitted it, but the import-side construction didn't pass it through, so the column default `utcnow` fired and overwrote the original timestamp with import time. Round-trip silently lost all historical ingestion dates.
+- **`portable.py` export+import dropped `Evaluation.rubric_hash`** (added with staleness detection). Users exporting on one machine and importing on another got evals with NULL hash, which staleness logic treats as up-to-date — so re-imported evals never triggered staleness detection even when the rubric YAML differed on the importing machine.
+- **`evaluate_runs` over-deleted up-to-date evals** when a run had both a stale eval and an up-to-date eval for the same rubric (legal via `skip_existing=False` / `--force` append mode). The stale-delete query filtered only on `(rubric, run_id)`, not `rubric_hash`, so it wiped both. Then the main loop skipped the run because it was in `up_to_date`, leaving the run with zero evals.
+- **`run_demo()` permanently hijacked caller state.** `os.environ["LEMON_DB_PATH"]`, `settings.db_path`, and the engine cache were mutated without restoration. Fine via the CLI (process exits), but library users calling `run_demo()` mid-session got their DB pointer silently redirected. The fix exposed a secondary bug: clearing the sessionmaker cache drops the SQLAlchemy `after_flush` listener that the aggregations cache uses for invalidation; subsequent caller writes wouldn't invalidate the cache. Both fixes in tick 40.
 
 ## [0.2.2] — 2026-06-08
 
