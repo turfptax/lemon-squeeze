@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.env
+
+# Data
+data/*.db
+data/*.db-journal
+data/*.sqlite*
+data/raw/
+data/exports/
+data/models/
+!data/.gitkeep
+
+# IDE / tool state
+.idea/
+.vscode/
+*.swp
+.DS_Store
+.claude/
+prompt_classifier.joblib
+
+# Tests / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/

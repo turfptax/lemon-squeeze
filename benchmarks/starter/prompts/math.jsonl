@@ -1,0 +1,5 @@
+{"prompt": "What is 27 times 49? Reply with only the number.", "intended_tag": "math", "expected_contains": ["1323"]}
+{"prompt": "What is 12 factorial? Reply with only the number.", "intended_tag": "math", "expected_contains": ["479001600"]}
+{"prompt": "Solve for x: 3x + 7 = 22. Reply with only the value of x.", "intended_tag": "math", "expected_contains": ["5"]}
+{"prompt": "What is the slope of the line through points (2,5) and (8,17)? Reply with only the number.", "intended_tag": "math", "expected_contains": ["2"]}
+{"prompt": "Compute 2^10 (two to the tenth power). Reply with only the number.", "intended_tag": "math", "expected_contains": ["1024"]}

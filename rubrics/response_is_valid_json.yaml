@@ -1,0 +1,5 @@
+name: response_is_valid_json
+description: Response (after stripping code fences) parses as JSON
+judge: json_valid
+config:
+  allow_fenced: true

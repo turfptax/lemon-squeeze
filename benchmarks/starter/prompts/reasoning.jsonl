@@ -1,0 +1,4 @@
+{"prompt": "Alice is older than Bob. Bob is older than Carol. Is Alice older than Carol? Reply 'yes' or 'no' only.", "intended_tag": "reasoning", "expected_contains": ["yes"]}
+{"prompt": "A bat and a ball cost $1.10 together. The bat costs $1.00 more than the ball. How many cents does the ball cost? Reply with only the number.", "intended_tag": "reasoning", "expected_contains": ["5"]}
+{"prompt": "If all dogs are mammals and all mammals are animals, are all dogs animals? Reply 'yes' or 'no' only.", "intended_tag": "reasoning", "expected_contains": ["yes"]}
+{"prompt": "I have three apples today. Yesterday I ate one apple. How many apples do I have today? Reply with only the number.", "intended_tag": "reasoning", "expected_contains": ["3"]}

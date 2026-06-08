@@ -1,0 +1,7 @@
+name: per_prompt_expected
+description: Response contains all `expected_contains` substrings from the prompt's metadata; skips prompts without that metadata.
+judge: expected_contains
+config:
+  metadata_key: expected_contains
+  on_missing: skip
+  case_sensitive: false

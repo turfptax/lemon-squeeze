@@ -1,0 +1,6 @@
+name: concise
+description: Response stays under 600 characters — fails for verbose model output.
+judge: regex
+config:
+  pattern: "^[\\s\\S]{0,600}$"
+  flags: ""

@@ -1,0 +1,5 @@
+{"prompt": "What is the capital city of Australia?", "intended_tag": "qa_factual", "expected_contains": ["Canberra"]}
+{"prompt": "In what year did Apollo 11 land on the Moon?", "intended_tag": "qa_factual", "expected_contains": ["1969"]}
+{"prompt": "Who wrote the novel 'Pride and Prejudice'?", "intended_tag": "qa_factual", "expected_contains": ["Austen"]}
+{"prompt": "What is the chemical symbol for gold?", "intended_tag": "qa_factual", "expected_contains": ["Au"]}
+{"prompt": "What is the largest planet in our solar system?", "intended_tag": "qa_factual", "expected_contains": ["Jupiter"]}

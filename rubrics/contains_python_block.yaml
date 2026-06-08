@@ -1,0 +1,8 @@
+name: contains_python_block
+description: Response includes a Python fenced code block
+judge: regex
+config:
+  pattern: "```python"
+  flags: ""
+applies_to:
+  tags: [coding]

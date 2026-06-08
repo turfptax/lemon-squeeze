@@ -1,0 +1,5 @@
+{"prompt": "Write a Python function called `fib(n)` that returns the nth Fibonacci number (0-indexed). Return only the function, no explanation.", "intended_tag": "coding", "expected_contains": ["def fib", "return"]}
+{"prompt": "Write a Python function `reverse(s)` that returns the reverse of string `s` without using slicing or reversed(). Return only the function.", "intended_tag": "coding", "expected_contains": ["def reverse"]}
+{"prompt": "Write a Python function `is_prime(n)` that returns True if n is a prime number, False otherwise. Return only the function.", "intended_tag": "coding", "expected_contains": ["def is_prime", "return"]}
+{"prompt": "Write a regular expression in Python that matches valid email addresses like `user@example.com`. Return only the pattern string assigned to a variable named `EMAIL_RE`.", "intended_tag": "coding", "expected_contains": ["EMAIL_RE", "@"]}
+{"prompt": "Write a SQL query that selects the top 5 customers by total order value from a table `orders(customer_id, amount)`. Return only the SQL.", "intended_tag": "coding", "expected_contains": ["SELECT", "GROUP BY", "ORDER BY", "LIMIT"]}

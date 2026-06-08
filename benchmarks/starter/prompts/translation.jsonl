@@ -1,0 +1,4 @@
+{"prompt": "Translate 'good morning' into Spanish. Reply with only the translation.", "intended_tag": "translation", "expected_contains": ["Buenos"]}
+{"prompt": "Translate 'thank you' into Japanese romaji (no Japanese characters). Reply with only the translation.", "intended_tag": "translation", "expected_contains": ["arigato"]}
+{"prompt": "Translate 'I love you' into French. Reply with only the translation.", "intended_tag": "translation", "expected_contains": ["Je t'aime"]}
+{"prompt": "Translate the word 'water' into German. Reply with only the translation.", "intended_tag": "translation", "expected_contains": ["Wasser"]}

@@ -1,0 +1,16 @@
+name: bullet_list_summary
+description: |
+  Verify a response is structured as a bullet list — at least 3 leading-dash
+  items at the start of lines. Uses backreferences and multi-line regex to
+  catch both `- item` and `* item` markers without confusing them with
+  hyphens inside running prose.
+
+  Useful for prompts that say "summarize in 3 bullet points."
+judge: regex
+config:
+  # ^ and multiline mode — match at line starts. We require at least 3
+  # markers across the whole response.
+  pattern: "(?m)^\\s*[-*]\\s+.+(?:\\n\\s*[-*]\\s+.+){2,}"
+  flags: m
+applies_to:
+  tags: [summarization]

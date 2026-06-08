@@ -1,0 +1,4 @@
+{"prompt": "Extract a JSON object with keys 'name' and 'email' from this text: 'Contact: John Doe (john@example.com)'. Reply with only the JSON.", "intended_tag": "extraction", "expected_contains": ["John", "john@example.com"]}
+{"prompt": "Extract a JSON array of all numbers from this text: 'I bought 3 apples, 7 oranges, and 12 bananas.' Reply with only the JSON.", "intended_tag": "extraction", "expected_contains": ["3", "7", "12"]}
+{"prompt": "Given the sentence 'Alice gave Bob 5 dollars on Friday', return a JSON object with keys 'giver', 'receiver', 'amount', 'day'. Reply with only the JSON.", "intended_tag": "extraction", "expected_contains": ["Alice", "Bob", "5", "Friday"]}
+{"prompt": "Extract all hashtags from 'Loving the weather today #sunny #spring #happy'. Return a JSON array. Reply with only the JSON.", "intended_tag": "extraction", "expected_contains": ["sunny", "spring", "happy"]}

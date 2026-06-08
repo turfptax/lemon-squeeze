@@ -1,0 +1,8 @@
+name: factual_quality
+description: LLM-graded factual accuracy for QA prompts — 1-5 scale; passing requires >= 4.
+judge: llm
+config:
+  rubric_description: "Score 1-5 how factually accurate the answer is. 5 = correct and clearly explained; 3 = mostly correct but missing nuance; 1 = factually wrong or hallucinated. passed=true if score >= 4."
+  pass_threshold: 4
+applies_to:
+  tags: [qa_factual]

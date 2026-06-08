@@ -1,0 +1,210 @@
+"""Benchmark runner — ties prompts + rubrics + models into one operation.
+
+A benchmark is a directory:
+
+    benchmarks/<name>/
+      prompts/<category>.jsonl     # each line: {prompt, intended_tag, expected_contains?}
+      rubrics/*.yaml               # optional; standard Rubric YAML files
+
+`bench load(dir)` ingests every .jsonl in prompts/ (using SeedFileIngester,
+which preserves all metadata fields including `expected_contains`).
+
+`bench run(dir, model_names)`:
+    1. Loads the bench (deduped against existing prompts)
+    2. Runs each prompt against each model (parallel fanout)
+    3. Per-prompt deterministic scoring: if a prompt has `expected_contains`
+       in its source_metadata, write an Evaluation with rubric
+       `bench:expected_contains` — score = fraction matched, passed = all matched
+    4. Applies any rubrics in rubrics/ on top
+    5. Returns a BenchReport with per-category pass rates
+
+The per-prompt `expected_contains` scoring is the value-add over the generic
+Rubric framework: rubrics treat all matching runs uniformly, but bench prompts
+each have their own ground truth.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from sqlalchemy import select
+
+from lemon_squeeze.aggregations import aggregate_by_intended_tag_model
+from lemon_squeeze.db import Prompt, Run, get_session
+from lemon_squeeze.eval.rubric import Rubric, evaluate_runs
+from lemon_squeeze.eval.runner import fanout
+from lemon_squeeze.ingestion.self_generated import SeedFileIngester
+
+BENCH_EXPECTED_RUBRIC = "bench:expected_contains"
+
+# The standard rubric used to score bench prompts against their per-prompt
+# `expected_contains` ground truth. Lives here rather than in rubrics/ so it
+# stays in lockstep with the bench code that depends on its name.
+_BENCH_RUBRIC = Rubric(
+    name=BENCH_EXPECTED_RUBRIC,
+    description="Response contains all `expected_contains` substrings from the prompt's metadata.",
+    judge_kind="expected_contains",
+    judge_config={"metadata_key": "expected_contains", "on_missing": "skip"},
+)
+
+
+@dataclass
+class CategoryStat:
+    category: str
+    model_name: str
+    n_runs: int
+    pass_count: int
+    avg_score: float
+    pass_rate: float
+    avg_cost_usd: float | None = None      # mean cost per run
+    avg_latency_ms: float | None = None    # mean wall time per run
+
+    @property
+    def cost_per_pass(self) -> float | None:
+        """Expected cost to get one successful run on this task.
+
+        Derived from `avg_cost_usd / pass_rate`; None when either cost is
+        unknown or no runs passed (division by zero).
+        """
+        if self.avg_cost_usd is None or self.pass_rate <= 0:
+            return None
+        return self.avg_cost_usd / self.pass_rate
+
+
+@dataclass
+class BenchReport:
+    bench_name: str
+    prompts_loaded: int = 0
+    prompts_deduped: int = 0
+    runs_attempted: int = 0
+    runs_succeeded: int = 0
+    runs_failed: int = 0
+    expected_evals_written: int = 0
+    rubric_evals_written: int = 0
+    per_category: list[CategoryStat] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+
+def load(bench_dir: Path) -> tuple[int, int]:
+    """Ingest every prompts/*.jsonl in the bench directory.
+
+    Returns (inserted, duplicates) across all files.
+    """
+    bench_dir = Path(bench_dir)
+    prompts_dir = bench_dir / "prompts"
+    if not prompts_dir.is_dir():
+        raise FileNotFoundError(f"no prompts/ subdirectory in {bench_dir}")
+
+    inserted = 0
+    duplicates = 0
+    for jsonl in sorted(prompts_dir.glob("*.jsonl")):
+        result = SeedFileIngester(jsonl).run()
+        inserted += result.inserted
+        duplicates += result.duplicates
+    return inserted, duplicates
+
+
+def run(
+    bench_dir: Path,
+    model_names: list[str] | None = None,
+    *,
+    max_workers: int = 4,
+    skip_existing: bool = True,
+    temperature: float = 0.0,
+    max_tokens: int | None = None,
+) -> BenchReport:
+    """Load → fanout → per-prompt scoring → apply rubrics → report."""
+    bench_dir = Path(bench_dir)
+    report = BenchReport(bench_name=bench_dir.name)
+
+    inserted, deduped = load(bench_dir)
+    report.prompts_loaded = inserted
+    report.prompts_deduped = deduped
+
+    # Collect the prompt IDs for prompts whose source is one of our JSONL files.
+    bench_prompt_ids = _bench_prompt_ids(bench_dir)
+    if not bench_prompt_ids:
+        report.errors.append("no prompts found in bench after load")
+        return report
+
+    fan = fanout(
+        prompt_ids=bench_prompt_ids,
+        model_names=model_names,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        skip_existing=skip_existing,
+        max_workers=max_workers,
+    )
+    report.runs_attempted = fan.attempted
+    report.runs_succeeded = fan.succeeded
+    report.runs_failed = fan.failed
+    report.errors.extend(fan.errors[:10])
+
+    # Score per-prompt `expected_contains` ground truth via the standard
+    # rubric framework — no special-case scorer required.
+    with get_session() as s:
+        run_ids = [
+            row[0]
+            for row in s.execute(
+                select(Run.id).where(Run.prompt_id.in_(bench_prompt_ids))
+            ).all()
+        ]
+    if run_ids:
+        er = evaluate_runs(
+            _BENCH_RUBRIC,
+            run_ids=run_ids,
+            skip_existing=skip_existing,
+        )
+        report.expected_evals_written = er.evaluations_written
+
+    # Apply category-level rubrics if any.
+    rubrics_dir = bench_dir / "rubrics"
+    if rubrics_dir.is_dir():
+        for ry in sorted(rubrics_dir.glob("*.yaml")):
+            rubric = Rubric.from_file(ry)
+            er = evaluate_runs(rubric, skip_existing=skip_existing)
+            report.rubric_evals_written += er.evaluations_written
+
+    report.per_category = _per_category_breakdown(bench_prompt_ids)
+    return report
+
+
+def _bench_prompt_ids(bench_dir: Path) -> list[int]:
+    """Collect Prompt IDs that came from this bench's JSONL files."""
+    prompts_dir = bench_dir / "prompts"
+    refs_prefix = [f.name for f in prompts_dir.glob("*.jsonl")]
+    if not refs_prefix:
+        return []
+    with get_session() as session:
+        rows = session.execute(
+            select(Prompt.id, Prompt.source_ref).where(
+                Prompt.source == "self_generated:seed"
+            )
+        ).all()
+        return [pid for pid, ref in rows if ref and any(ref.startswith(p) for p in refs_prefix)]
+
+
+def _per_category_breakdown(prompt_ids: list[int]) -> list[CategoryStat]:
+    """Group bench results by (intended_tag, model) and compute pass rates."""
+    if not prompt_ids:
+        return []
+
+    aggs = aggregate_by_intended_tag_model(
+        rubrics=[BENCH_EXPECTED_RUBRIC],
+        prompt_ids=prompt_ids,
+    )
+    out = [
+        CategoryStat(
+            category=a.tag,
+            model_name=a.model_name,
+            n_runs=a.n_evals,
+            pass_count=a.n_passed,
+            avg_score=a.avg_score,
+            pass_rate=a.pass_rate,
+            avg_cost_usd=a.avg_cost_usd,
+            avg_latency_ms=a.avg_latency_ms,
+        )
+        for a in aggs
+    ]
+    out.sort(key=lambda s: (s.category, -s.pass_rate, s.model_name))
+    return out

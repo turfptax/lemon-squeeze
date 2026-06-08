@@ -1,0 +1,8 @@
+name: helpful_summary
+description: For summarization prompts, rate how well the response captures the key points without padding
+judge: llm
+config:
+  rubric_description: "Score 1-5 how well the assistant summarized the user's request: 5 = captures all key points concisely; 3 = covers the main idea but misses nuance or adds filler; 1 = misses the point or hallucinates. passed=true if score >= 4."
+  pass_threshold: 4
+applies_to:
+  tags: [summarization]
