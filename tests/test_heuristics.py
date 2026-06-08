@@ -31,3 +31,28 @@ def test_multilabel_coding_plus_summarization():
 
 def test_unknown_when_no_signals_match():
     assert _top_tags("hi") == ["unknown"]
+
+
+def test_cpp_keyword_actually_fires_coding_signal():
+    """SIGNALS["coding"] has _kw(..., "c\\+\\+", ...). The author manually
+    escaped the `+` regex metacharacters, but `_kw` already passes the word
+    through `re.escape`, so the pattern double-escapes and matches the
+    literal 5-char sequence `c\\+\\+` (with backslashes), not "c++". Net
+    effect: prompts mentioning C++ never gain the c++ signal's weight.
+
+    Compare the same prompt with and without "C++" to assert the signal
+    fires (raising the coding score above what other keywords contribute).
+    Without the fix both come back at identical confidence."""
+
+    def _coding_conf(prompt: str) -> float:
+        for p in HeuristicClassifier().predict(prompt):
+            if p.tag == "coding":
+                return p.confidence
+        return 0.0
+
+    base_conf = _coding_conf("Write a function to compute fibonacci.")
+    cpp_conf = _coding_conf("Write a C++ function to compute fibonacci.")
+    assert cpp_conf > base_conf, (
+        f"adding 'C++' to a coding prompt should raise the coding signal "
+        f"(_kw double-escape bug otherwise); got base={base_conf} cpp={cpp_conf}"
+    )

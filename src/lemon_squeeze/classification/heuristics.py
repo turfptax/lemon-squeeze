@@ -34,7 +34,13 @@ SIGNALS: dict[str, list[Signal]] = {
         _re(r"```[\w+-]*\n", weight=3.0),
         _re(r"(^|\n)\s{4}\S", weight=1.0),  # indented code
         _kw("function", "method", "class", "variable", "compile", "debug", "stacktrace"),
-        _kw("python", "javascript", "typescript", "rust", "go", "java", "c\\+\\+", "sql"),
+        _kw("python", "javascript", "typescript", "rust", "go", "java", "sql"),
+        # `_kw` wraps every word with `\b...\b`, but `\b` doesn't match
+        # after non-word chars like `+`. So "c++ function" never matched the
+        # `\bc\+\+\b` pattern. Use a non-word lookahead instead. (Previously
+        # the word was passed as the pre-escaped string "c\\+\\+" inside
+        # `_kw`, which double-escaped to match the literal sequence `c\+\+`.)
+        _re(r"\bc\+\+(?=\W|$)", weight=1.0),
         _kw("bug", "fix", "refactor", "implement", "snippet"),
     ],
     "reasoning": [
