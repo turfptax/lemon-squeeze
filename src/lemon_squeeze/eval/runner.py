@@ -59,11 +59,22 @@ def execute_run(
     provider = _provider_for_model(model)
     client = ChatClient(provider)  # type: ignore[arg-type]
 
+    # Build run_metadata only from values that are actually set. The previous
+    # construction `{"system": system, **(extra_metadata or {})} or None` could
+    # never produce None because the "system" key was always present, leaving
+    # every Run row with `{"system": None}` even when no system prompt or
+    # extras were given. That made `WHERE run_metadata IS NOT NULL` queries
+    # match every row.
+    meta: dict[str, Any] = {}
+    if system is not None:
+        meta["system"] = system
+    if extra_metadata:
+        meta.update(extra_metadata)
     run = Run(
         prompt_id=prompt.id,
         model_id=model.id,
         temperature=temperature,
-        run_metadata={"system": system, **(extra_metadata or {})} or None,
+        run_metadata=meta or None,
     )
 
     try:
