@@ -8,6 +8,7 @@ Two modes:
 """
 from __future__ import annotations
 
+import hashlib
 import itertools
 import json
 from collections.abc import Iterator, Sequence
@@ -15,6 +16,15 @@ from pathlib import Path
 from typing import Any
 
 from lemon_squeeze.ingestion.base import Ingester, RawPrompt
+
+
+def _template_ref(template: str) -> str:
+    """Stable per-template identifier for `source_ref`. Python's built-in
+    `hash()` is randomized per process for strings (PYTHONHASHSEED), so the
+    same template would produce different source_refs across runs --
+    breaking the implicit contract that source_refs are stable identifiers.
+    Use a truncated SHA-256 instead."""
+    return hashlib.sha256(template.encode("utf-8")).hexdigest()[:8]
 
 
 class SeedFileIngester(Ingester):
@@ -107,6 +117,6 @@ class TemplateIngester(Ingester):
                 yield RawPrompt(
                     content=content,
                     source=self.source_name,
-                    source_ref=f"tmpl:{hash(template) & 0xFFFFFFFF:x}",
+                    source_ref=f"tmpl:{_template_ref(template)}",
                     metadata=meta,
                 )

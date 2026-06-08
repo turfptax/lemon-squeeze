@@ -52,6 +52,42 @@ def test_template_ingester_expands_cartesian():
     assert all(p.metadata.get("intended_tag") == "translation" for p in items)
 
 
+def test_template_ingester_source_refs_are_deterministic_across_processes():
+    """source_ref must be stable across processes. Python's built-in `hash()`
+    is randomized per-process for strings (PYTHONHASHSEED), so using it for
+    source_ref made the same template produce different source_refs each run
+    -- breaking the observability contract that source_refs are stable
+    identifiers. Two TemplateIngesters built from identical inputs in the
+    same process happen to give the same refs (same PYTHONHASHSEED), so the
+    real check is: the source_ref string must NOT depend on Python's hash()."""
+    import subprocess
+    import sys
+
+    code = (
+        "from lemon_squeeze.ingestion.self_generated import TemplateIngester\n"
+        "ing = TemplateIngester(templates=['Hello {x}.'], slots={'x': ['world']})\n"
+        "for p in ing.iter_prompts():\n"
+        "    print(p.source_ref)\n"
+    )
+    # Two child processes with DIFFERENT randomized hash seeds.
+    import os
+    refs = set()
+    for seed in ("12345", "98765"):
+        env = dict(os.environ)
+        env["PYTHONHASHSEED"] = seed
+        env["PYTHONIOENCODING"] = "utf-8"
+        out = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True, text=True, env=env, check=True,
+        )
+        refs.add(out.stdout.strip())
+    assert len(refs) == 1, (
+        f"source_ref differs across PYTHONHASHSEED values: {refs} -- "
+        f"means TemplateIngester is using Python's process-randomized hash() "
+        f"instead of a deterministic one"
+    )
+
+
 def test_claude_export_ingest(tmp_path: Path):
     export = tmp_path / "conversations.json"
     export.write_text(
