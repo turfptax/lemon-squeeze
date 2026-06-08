@@ -2,6 +2,15 @@
 
 All notable changes to Lemon Squeeze. Dates are local (project lives on one machine).
 
+## [0.2.4] — 2026-06-08
+
+LLM response-handling hardening. Three bugs in code that consumes raw LLM API responses, all of which would crash a batch operation on a single misbehaving model call.
+
+### Fixed
+
+- **LLMJudge inferred `passed=False` from null instead of using the score-threshold fallback.** `passed = bool(parsed.get("passed", score >= self.pass_threshold))` — `dict.get(key, default)` only fires `default` when the key is MISSING, not when its value is null. An LLM emitting `{"score": 5, "passed": null}` (legitimate output, models sometimes do this when uncertain) made `parsed.get` return `None`, then `bool(None)` is False. A high-score response was wrongly marked failing. Fix: read `parsed.get("passed")` separately; fall back to the score threshold only when the value is None. Explicit true/false from the LLM still wins.
+- **`data["choices"][0]["message"]["content"]` reads with no exception guard across three call sites.** Affects `LLMClassifier.predict`, `LLMJudge.evaluate`, and `runner.execute_run`. Each site had different (incomplete) exception coverage: LLMClassifier caught `(httpx.HTTPError, ValueError)` only; LLMJudge caught only `httpx.HTTPError`; runner caught `(KeyError, ValueError, TypeError)` but missed `IndexError`. Real-world triggers: rate-limited 200 OK responses (`{"error": "rate_limited"}`), `{"choices": []}` from local models on certain prompts, missing `message.content` when `finish_reason` is "length". Each site now catches the appropriate types and returns either an empty/typed-failure verdict or records a `parse_error` on the Run row, so one bad LLM response can't crash an entire `classify_unlabeled` pass or `evaluate_runs` batch.
+
 ## [0.2.3] — 2026-06-08
 
 The onboarding command + 7 review-fixes. Project moved under version control with the v0.2.3 cycle (initial commit + per-tick attributed commits going forward). After landing `lemon demo` and the git workflow, a careful-review pattern produced seven real production bugs in seven consecutive ticks of reading existing modules. Each had been silently in production since the feature that introduced it.
