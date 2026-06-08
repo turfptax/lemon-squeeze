@@ -312,7 +312,11 @@ def import_from_dir(in_dir: Path) -> ImportReport:
             char_count = rec.get("char_count")
             if char_count is None:
                 char_count = len(rec.get("content", ""))
-            p = Prompt(
+            # ingested_at is exported but was being dropped on import, which
+            # let the column default (utcnow) silently overwrite the original
+            # timestamp with import time. Only pass it through if present.
+            ingested_at = _parse_iso(rec.get("ingested_at"))
+            p_kwargs = dict(
                 content=rec.get("content", ""),
                 content_hash=h,
                 token_count=rec.get("token_count"),
@@ -322,6 +326,9 @@ def import_from_dir(in_dir: Path) -> ImportReport:
                 source_metadata=rec.get("source_metadata"),
                 created_at=_parse_iso(rec.get("created_at")),
             )
+            if ingested_at is not None:
+                p_kwargs["ingested_at"] = ingested_at
+            p = Prompt(**p_kwargs)
             s.add(p)
             s.flush()
             existing_prompts[h] = p

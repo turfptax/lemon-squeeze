@@ -264,6 +264,34 @@ def test_round_trip_preserves_rubric_hash(tmp_path: Path):
     assert by_rubric["other_rubric"].rubric_hash == "b" * 64
 
 
+def test_round_trip_preserves_ingested_at(tmp_path: Path):
+    """Prompt.ingested_at records when a prompt first entered the system.
+    Round-trip via export+import must preserve this — otherwise an importing
+    machine sees `ingested_at = "now"` for every imported prompt, breaking
+    time-series analytics and any historical filtering on ingestion date."""
+    from datetime import datetime, timezone
+
+    historical = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+
+    with get_session() as s:
+        p = Prompt(
+            content="ancient prompt", content_hash="ph-ancient",
+            char_count=14, source="archive",
+            ingested_at=historical,
+        )
+        s.add(p)
+
+    export_to_dir(tmp_path / "out")
+    _truncate_all()
+    import_from_dir(tmp_path / "out")
+
+    with get_session() as s:
+        p2 = s.scalar(select(Prompt).where(Prompt.content_hash == "ph-ancient"))
+    assert p2.ingested_at == historical, (
+        f"ingested_at silently overwritten on import; got {p2.ingested_at}"
+    )
+
+
 def test_import_handles_naive_iso_timestamps(tmp_path: Path):
     """Round-trip should not crash on the naive datetime path —
     UTCDateTime coerces incoming naive datetimes to UTC."""
