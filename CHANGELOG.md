@@ -2,6 +2,14 @@
 
 All notable changes to Lemon Squeeze. Dates are local (project lives on one machine).
 
+## [Unreleased]
+
+### Added
+
+- **PEP 561 `py.typed` marker** so downstream consumers who import `lemon_squeeze` in code checked by mypy/pyright see the project's inline type annotations. Empty file is enough; tells type-checkers "this package's source IS the type stubs." Hatchling picks it up automatically. (Commit `bcfb510`.)
+- **LICENSE file** with canonical MIT text. `pyproject.toml` has declared `license = "MIT"` since project start but the actual license text wasn't in the repo, so PyPI installs would have shipped metadata only and GitHub wouldn't show a license badge. (Commit `9b32179`.)
+- **`.gitattributes`** with `* text=auto eol=lf` plus binary exceptions for png/jpg/pdf/db/sqlite/joblib/pyc. Stops the "LF will be replaced by CRLF" warning chorus on every Windows commit and standardizes the repo's stored line endings. (Commit `9b32179`.)
+
 ## [0.2.5] — 2026-06-08
 
 Two long-standing bugs found via careful-review reads of code that had been in production since project start. After this release, the careful-review pattern has produced its yield: a 0-for-9 stretch across well-reviewed core modules (`utils`, `stats`, `compare`, `providers`, `db/session`, `db/types`, `classification/base`, `doctor`, `dashboard`) indicates the high-value bugs are now out of the system.
