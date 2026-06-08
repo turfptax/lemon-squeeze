@@ -22,8 +22,18 @@ class SeedFileIngester(Ingester):
 
     source_name = "self_generated:seed"
 
-    def __init__(self, path: Path) -> None:
+    def __init__(
+        self,
+        path: Path,
+        metadata_overlay: dict[str, Any] | None = None,
+    ) -> None:
+        """`metadata_overlay`, when given, is merged into every emitted
+        prompt's source_metadata. Lets callers (e.g. `bench.load`) tag the
+        prompts with bench-specific fields so downstream filters can scope
+        to that bench rather than relying on the filename alone.
+        """
         self.path = Path(path)
+        self.metadata_overlay = metadata_overlay or {}
 
     def iter_prompts(self) -> Iterator[RawPrompt]:
         suffix = self.path.suffix.lower()
@@ -54,11 +64,15 @@ class SeedFileIngester(Ingester):
                 continue
             if not isinstance(content, str) or not content.strip():
                 continue
+            # Caller-supplied overlay (bench_dir, etc) loses to per-record
+            # metadata when keys collide — the file's own metadata is more
+            # specific. Same merge order applies in the prompts code path.
+            merged = {**self.metadata_overlay, **metadata}
             yield RawPrompt(
                 content=content.strip(),
                 source=self.source_name,
                 source_ref=f"{self.path.name}:{idx}",
-                metadata=metadata,
+                metadata=merged,
             )
 
 

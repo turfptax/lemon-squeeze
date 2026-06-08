@@ -85,20 +85,34 @@ class BenchReport:
     errors: list[str] = field(default_factory=list)
 
 
+_BENCH_DIR_META_KEY = "lemon_bench_dir"
+
+
+def _bench_dir_marker(bench_dir: Path) -> str:
+    """Canonical string for marking which bench a prompt came from. We
+    resolve+as_posix so the same bench dir compares equal regardless of how
+    the user spelled the path (relative vs absolute, Windows backslashes)."""
+    return Path(bench_dir).resolve().as_posix()
+
+
 def load(bench_dir: Path) -> tuple[int, int]:
     """Ingest every prompts/*.jsonl in the bench directory.
 
-    Returns (inserted, duplicates) across all files.
+    Returns (inserted, duplicates) across all files. Each prompt's
+    source_metadata gets a `lemon_bench_dir` field marking which bench it
+    came from, so two benches that happen to share filenames (e.g. both
+    have `coding.jsonl`) don't bleed into each other.
     """
     bench_dir = Path(bench_dir)
     prompts_dir = bench_dir / "prompts"
     if not prompts_dir.is_dir():
         raise FileNotFoundError(f"no prompts/ subdirectory in {bench_dir}")
 
+    overlay = {_BENCH_DIR_META_KEY: _bench_dir_marker(bench_dir)}
     inserted = 0
     duplicates = 0
     for jsonl in sorted(prompts_dir.glob("*.jsonl")):
-        result = SeedFileIngester(jsonl).run()
+        result = SeedFileIngester(jsonl, metadata_overlay=overlay).run()
         inserted += result.inserted
         duplicates += result.duplicates
     return inserted, duplicates
@@ -170,18 +184,33 @@ def run(
 
 
 def _bench_prompt_ids(bench_dir: Path) -> list[int]:
-    """Collect Prompt IDs that came from this bench's JSONL files."""
-    prompts_dir = bench_dir / "prompts"
-    refs_prefix = [f.name for f in prompts_dir.glob("*.jsonl")]
-    if not refs_prefix:
-        return []
+    """Collect Prompt IDs that came from this bench's JSONL files.
+
+    Filters by `source_metadata[_BENCH_DIR_META_KEY]` matching the resolved
+    bench dir. Previously this filtered by `source_ref.startswith(filename)`,
+    which collided across benches sharing filename conventions (e.g. both
+    `benchmarks/starter` and a user's custom bench having `coding.jsonl`):
+    each bench would see the union of all matching prompts and downstream
+    per-category breakdowns would over-count.
+
+    Legacy prompts ingested before this marker existed have no
+    `lemon_bench_dir` key and won't be matched here. They'd need to be
+    re-loaded or migrated by hand if the user still wants them counted.
+    """
+    marker = _bench_dir_marker(bench_dir)
     with get_session() as session:
+        # JSON-path filtering varies across DBs; load and filter in Python.
+        # This is called once per bench operation, not per request, so the
+        # O(n_prompts) overhead is fine.
         rows = session.execute(
-            select(Prompt.id, Prompt.source_ref).where(
+            select(Prompt.id, Prompt.source_metadata).where(
                 Prompt.source == "self_generated:seed"
             )
         ).all()
-        return [pid for pid, ref in rows if ref and any(ref.startswith(p) for p in refs_prefix)]
+        return [
+            pid for pid, meta in rows
+            if meta and meta.get(_BENCH_DIR_META_KEY) == marker
+        ]
 
 
 def _per_category_breakdown(prompt_ids: list[int]) -> list[CategoryStat]:

@@ -97,6 +97,38 @@ def test_run_scores_per_prompt_expected(tmp_path: Path):
     assert by_cat[("qa_factual", "local/tiny")].pass_rate == 0.0
 
 
+def test_bench_does_not_collect_prompts_from_overlapping_filenames(tmp_path: Path):
+    """Two benches with the same jsonl filenames must not see each other's
+    prompts. SeedFileIngester sets source_ref = '<filename>:<idx>' (no path),
+    so filtering by source_ref prefix alone collides across benches that share
+    a naming convention (the starter bench has `coding.jsonl`, `math.jsonl`,
+    etc — likely to be copied)."""
+    bench_a = tmp_path / "bench_a"
+    bench_b = tmp_path / "bench_b"
+    for d, content in [(bench_a, "Prompt unique to bench A"),
+                        (bench_b, "Prompt unique to bench B")]:
+        (d / "prompts").mkdir(parents=True)
+        (d / "prompts" / "coding.jsonl").write_text(
+            json.dumps({"prompt": content, "intended_tag": "coding"}),
+            encoding="utf-8",
+        )
+
+    bench_mod.load(bench_a)
+    bench_mod.load(bench_b)
+
+    ids_a = bench_mod._bench_prompt_ids(bench_a)
+    ids_b = bench_mod._bench_prompt_ids(bench_b)
+
+    # Each bench should see ONLY its own prompts.
+    assert len(ids_a) == 1, (
+        f"bench A grabbed bench B's prompts via filename overlap (got {len(ids_a)})"
+    )
+    assert len(ids_b) == 1
+    assert set(ids_a).isdisjoint(set(ids_b)), (
+        "bench prompt-ID sets must be disjoint when files happen to share names"
+    )
+
+
 def test_run_is_idempotent(tmp_path: Path):
     d = _make_bench(tmp_path)
     with get_session() as s:
