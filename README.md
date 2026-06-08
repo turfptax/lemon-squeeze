@@ -1,6 +1,6 @@
 # Lemon Squeeze
 
-**v0.2.4** — A model-performance harness for figuring out which LLM (local or remote) can reliably handle which kind of prompt. The end goal is an **intelligent model router** that picks the smallest model that still wins for a given task.
+**v0.2.5** — A model-performance harness for figuring out which LLM (local or remote) can reliably handle which kind of prompt. The end goal is an **intelligent model router** that picks the smallest model that still wins for a given task.
 
 See [CHANGELOG.md](CHANGELOG.md) for what's new.
 

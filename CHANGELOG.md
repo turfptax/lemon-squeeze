@@ -2,6 +2,15 @@
 
 All notable changes to Lemon Squeeze. Dates are local (project lives on one machine).
 
+## [0.2.5] — 2026-06-08
+
+Two long-standing bugs found via careful-review reads of code that had been in production since project start. After this release, the careful-review pattern has produced its yield: a 0-for-9 stretch across well-reviewed core modules (`utils`, `stats`, `compare`, `providers`, `db/session`, `db/types`, `classification/base`, `doctor`, `dashboard`) indicates the high-value bugs are now out of the system.
+
+### Fixed
+
+- **`TemplateIngester` produced different `source_ref` values across processes.** `source_ref=f"tmpl:{hash(template) & 0xFFFFFFFF:x}"` used Python's built-in `hash()`, which is randomized per process for strings via PYTHONHASHSEED. So the same template emitted different `source_refs` across runs — breaking the implicit contract that source_refs are stable observability identifiers. Content-hash dedup still worked (Prompt rows merged on content_hash), but operators tailing logs across runs saw shifting identifiers for the same logical input. Replaced with a truncated SHA-256.
+- **Heuristic classifier's `c++` keyword never matched real prompts.** Two layered bugs in the same signal: (1) `_kw(..., "c\\+\\+", ...)` manually escaped the `+` regex metacharacters, but `_kw` already passes each word through `re.escape`, so the pattern double-escaped and matched the literal 5-char sequence `c\+\+` (with backslashes), not "c++". (2) Even with proper "c++", `_kw` wraps every word in `\b...\b`, and word boundary `\b` won't match after the non-word char `+`, so `\bc\+\+\b` can't match "c++ function". Net: prompts mentioning C++ never got the c++ signal's weight, and the coding-tag confidence didn't change when "C++" was added or removed. Fix: drop "c++" from the `_kw` list and add a dedicated `_re(r"\bc\+\+(?=\W|$)", weight=1.0)` using non-word lookahead for both ends.
+
 ## [0.2.4] — 2026-06-08
 
 LLM response-handling hardening. Three bugs in code that consumes raw LLM API responses, all of which would crash a batch operation on a single misbehaving model call.
