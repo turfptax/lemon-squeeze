@@ -135,6 +135,42 @@ def test_report_returns_schema_version(client: TestClient):
     assert "scorecards" in body
 
 
+def test_report_honors_query_params(client: TestClient):
+    """Caught against real LM Studio: GET /report took ZERO query
+    parameters and always used build_report defaults (rubric=human_pass,
+    min_samples=3, threshold=0.7). Anyone running a real bench
+    (rubric=bench:expected_contains) saw scorecards=[] and gaps full of
+    'no_evals' because the endpoint silently ignored their actual rubric.
+
+    Mirror the CLI report's three flags: threshold, min_samples, rubric.
+    """
+    # Seed enough data that the per-tag scorecard becomes non-empty WHEN
+    # the right rubric is queried.
+    _seed_routing_data()
+
+    # Default request -> uses human_pass, which the seed populates. Should
+    # produce a coding scorecard at the default threshold/min_samples.
+    r = client.get("/report")
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["scorecards"]) >= 1
+    assert any(sc["tag"] == "coding" for sc in body["scorecards"])
+
+    # Query for a rubric that doesn't exist -> no scorecards (everything
+    # falls into gaps). This confirms the param is actually being honored
+    # rather than silently ignored.
+    r = client.get("/report", params={"rubric": "nonexistent-rubric"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["scorecards"] == [], (
+        "report should honor ?rubric param; falling back to defaults means "
+        "anyone using a non-human_pass rubric gets a broken report"
+    )
+    # The coding tag should appear in gaps now since no evals match the
+    # bogus rubric.
+    assert any(g["tag"] == "coding" for g in body["gaps"])
+
+
 # ---------- /compare --------------------------------------------------------
 
 

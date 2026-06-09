@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 try:
-    from fastapi import FastAPI, HTTPException
+    from fastapi import FastAPI, HTTPException, Query
     from pydantic import BaseModel, Field
 except ImportError as e:  # pragma: no cover - tested elsewhere
     raise ImportError(
@@ -156,8 +156,24 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/report")
-    def report() -> dict[str, Any]:
-        return build_report().to_dict()
+    def report(
+        threshold: float = 0.7,
+        min_samples: int = 3,
+        rubric: list[str] = Query(default=["human_pass"]),
+    ) -> dict[str, Any]:
+        """Executive report. Mirrors the CLI `lemon report` flags.
+
+        Previously this endpoint took zero parameters and always used the
+        defaults baked into build_report(): rubric=human_pass, min_samples=3,
+        threshold=0.7. Anyone running a real bench (rubric=bench:expected_contains
+        or whatever) would see scorecards=[] and gaps full of "no_evals"
+        because the endpoint silently ignored their actual rubric.
+        """
+        return build_report(
+            threshold=threshold,
+            min_samples=min_samples,
+            authoritative_rubrics=tuple(rubric),
+        ).to_dict()
 
     @app.post("/compare")
     def compare(req: CompareRequest) -> dict[str, Any]:
