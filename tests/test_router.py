@@ -68,3 +68,35 @@ def test_recommend_respects_min_samples():
     # the candidate exists but doesn't qualify.
     assert rec.picked is not None
     assert rec.fallback is True
+
+
+def test_recommend_uses_ensemble_not_just_heuristic(monkeypatch):
+    """The router must classify incoming prompts with the full ensemble
+    (heuristic + trained ML + optional LLM), not HeuristicClassifier alone.
+    Found live: a trained ML model correctly tagged a syllogism prompt as
+    "reasoning" via `lemon classify ask`, but `lemon route pick` returned
+    Tags: (none) for the same prompt because recommend() bypassed the
+    ensemble entirely -- severing the accumulate-labels -> train-ml ->
+    smarter-router feedback loop at the last link."""
+    from lemon_squeeze.classification.base import Classifier, TagPrediction
+
+    class FakeEnsemble(Classifier):
+        name = "fake"
+
+        def predict(self, prompt: str) -> list[TagPrediction]:
+            return [
+                TagPrediction(tag="reasoning", confidence=0.7, classifier="ml"),
+                TagPrediction(tag="unknown", confidence=0.1, classifier="heuristic"),
+            ]
+
+    monkeypatch.setattr(
+        "lemon_squeeze.router.build_default_classifier", lambda: FakeEnsemble()
+    )
+    _make_history(
+        "local/logic-3b", 3.0, "Premise prompt about syllogisms.", "reasoning",
+        [True, True, True],
+    )
+    rec = recommend("If all bloops are razzies, are bloops lazzies?", threshold=0.5)
+    assert rec.tags == ["reasoning"]  # "unknown" filtered, ML tag honored
+    assert rec.picked is not None
+    assert rec.picked.model_name == "local/logic-3b"

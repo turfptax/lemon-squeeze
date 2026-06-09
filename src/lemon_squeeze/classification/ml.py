@@ -1,9 +1,10 @@
 """TF-IDF + LogisticRegression multi-label classifier.
 
 Trained on whatever labeled prompts the DB already has — labels come from
-`prompt_tags` rows where `classifier='human'` (preferred), falling back to
-the highest-confidence heuristic tag if no human labels exist. The model
-serializes to a single joblib file under `data/models/`.
+`prompt_tags` rows in declining order of trust: `classifier='human'` first,
+then `classifier='bench'` (the category a benchmark file declared outright),
+then the highest-confidence heuristic tag. The model serializes to a single
+joblib file under `data/models/`.
 
 This is intentionally simple. The ML classifier earns its keep once a few
 hundred curated examples accumulate; before then the heuristic carries the load.
@@ -124,7 +125,16 @@ class MLClassifier(Classifier):
 
     @staticmethod
     def _collect_examples() -> list[tuple[str, list[str]]]:
-        """Prefer human labels; fall back to highest-confidence heuristic tag per prompt."""
+        """Labels in declining order of trust: human > bench > heuristic.
+
+        Bench tags are the category a benchmark JSONL declared outright
+        (confidence 1.0) -- as trustworthy as a human label. Without this
+        rung, training on a freshly-benched DB fell through to the heuristic
+        guesses and the ML model inherited their blind spots: it could never
+        learn "reasoning" because the heuristic has no reasoning signal, so
+        the router stayed unable to tag incoming reasoning prompts even with
+        4 declared examples sitting in the DB.
+        """
         with get_session() as session:
             prompts = session.query(Prompt).all()
             tags_by_prompt: dict[int, list[PromptTag]] = defaultdict(list)
@@ -137,6 +147,10 @@ class MLClassifier(Classifier):
                 human = [t.tag for t in tags if t.classifier == "human"]
                 if human:
                     examples.append((p.content, sorted(set(human))))
+                    continue
+                bench = [t.tag for t in tags if t.classifier == "bench"]
+                if bench:
+                    examples.append((p.content, sorted(set(bench))))
                     continue
                 heur = [t for t in tags if t.classifier == "heuristic" and t.tag != "unknown"]
                 if heur:

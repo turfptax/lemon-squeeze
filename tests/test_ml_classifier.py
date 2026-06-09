@@ -162,6 +162,25 @@ def test_heuristic_fallback_when_no_human_label():
     assert examples[0][1] == ["coding"]
 
 
+def test_bench_labels_preferred_over_heuristic():
+    """Trust ladder is human > bench > heuristic. Bench tags are the
+    category a benchmark JSONL declared outright -- without this rung,
+    training on a freshly-benched DB fell through to the heuristic
+    guesses ("unknown" for all reasoning prompts) and the ML model
+    could never learn the tags the heuristic can't see."""
+    _seed_labeled("A syllogism about bloops and razzies", "reasoning",
+                  classifier="bench", confidence=1.0)
+    with get_session() as s:
+        p = s.scalars(__import__("sqlalchemy").select(Prompt)).first()
+        s.add(PromptTag(
+            prompt_id=p.id, tag="unknown", classifier="heuristic", confidence=0.1,
+        ))
+
+    examples = MLClassifier._collect_examples()
+    assert len(examples) == 1
+    assert examples[0][1] == ["reasoning"]  # bench label beats heuristic guess
+
+
 def test_heuristic_highest_confidence_wins():
     """If only heuristic labels exist, the highest-confidence one is used."""
     with get_session() as s:

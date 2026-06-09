@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from lemon_squeeze.aggregations import aggregate_by_tag_model
-from lemon_squeeze.classification.heuristics import HeuristicClassifier
+from lemon_squeeze.classification.ensemble import build_default_classifier
 
 DEFAULT_AUTH_RUBRICS = ("human_pass",)
 DEFAULT_THRESHOLD = 0.7
@@ -144,7 +144,20 @@ def recommend(
         weights = PRESETS[weights]
     weights_n = weights.normalize()
 
-    tags = [p.tag for p in HeuristicClassifier().predict(prompt) if p.tag != "unknown"]
+    # Classify with the full ensemble (heuristic + trained ML + optional LLM),
+    # not just the heuristic. This closes the project's feedback loop:
+    # accumulate labels -> train ML -> the router actually uses what it
+    # learned. Until now recommend() called HeuristicClassifier() directly,
+    # so a trained ML model that could tag e.g. "reasoning" (a category the
+    # heuristic has no signal for) was consulted by `lemon classify ask` but
+    # ignored by `lemon route pick`. Dedupe by tag, highest confidence first.
+    preds = sorted(
+        build_default_classifier().predict(prompt), key=lambda p: -p.confidence
+    )
+    tags: list[str] = []
+    for p in preds:
+        if p.tag != "unknown" and p.tag not in tags:
+            tags.append(p.tag)
     stats = stats_by_tag(tags, authoritative_rubrics=authoritative_rubrics)
 
     if not stats:
