@@ -1150,6 +1150,7 @@ def bench_run(
     workers: int = typer.Option(4, "--workers", "-j"),
     temperature: float = typer.Option(0.0, "--temp"),
     force: bool = typer.Option(False, "--force"),
+    no_classify: bool = NO_CLASSIFY_OPT,
 ) -> None:
     """Load → fanout → score → report. Defaults to all registered models."""
     report = bench_mod.run(
@@ -1159,6 +1160,12 @@ def bench_run(
         skip_existing=not force,
         temperature=temperature,
     )
+    # Auto-classify after the run, so `lemon report` / `route pick` / the
+    # dashboard heatmap see per-tag aggregates instead of empty tables. Done
+    # at the CLI layer (not inside bench.run) to keep the bench module free
+    # of a classification dependency. Idempotent: re-runs only hit prompts
+    # that don't already have a heuristic tag.
+    _auto_classify(no_classify)
     console.print(
         f"[bold]bench[/bold] {report.bench_name} — "
         f"prompts loaded: [green]{report.prompts_loaded}[/green] "

@@ -272,3 +272,50 @@ def test_providers_sync_persists_size_b_from_discovery(monkeypatch):
     with get_session() as s:
         qwen2 = s.scalar(select(Model).where(Model.name == "qwen3.5-2b"))
     assert qwen2.size_params_b == 2.0, "update path dropped size_params_b"
+
+
+# ---------- bench run wires auto-classify ----------------------------------
+
+
+def test_bench_run_classifies_after_fanout(monkeypatch, tmp_path: Path):
+    """Caught against real LM Studio: `lemon bench run` ran load + fanout +
+    score successfully, said "30 evals written", but PromptTag rows count
+    stayed at 0. Downstream commands -- `report`, `route pick`, dashboard
+    heatmap -- all show empty per-tag tables because the per-tag scorecard
+    is computed from PromptTag, and `bench run` skipped the classify step
+    that `bench load` runs.
+
+    `bench.run()` is a low-level pipeline (load/fanout/score). Classification
+    belongs at the CLI altitude, which is also where `bench load` puts it.
+    This test mocks `bench.run()` and asserts the CLI calls _auto_classify
+    on top, by checking PromptTag rows exist after `bench run`."""
+    from sqlalchemy import func, select
+
+    from lemon_squeeze import bench as bench_mod
+    from lemon_squeeze.db import Prompt, PromptTag, get_session
+
+    # Pre-populate one prompt so the heuristic classifier has something to
+    # tag. Keep the bench.run() mock side-effect-free.
+    from lemon_squeeze.utils import count_tokens, hash_prompt
+    content = "Write a Python function that returns 42."
+    with get_session() as s:
+        s.add(Prompt(content=content, content_hash=hash_prompt(content),
+                     char_count=len(content), token_count=count_tokens(content),
+                     source="test"))
+
+    def fake_bench_run(*args, **kwargs):
+        return bench_mod.BenchReport(bench_name="starter")
+
+    monkeypatch.setattr("lemon_squeeze.cli.bench_mod.run", fake_bench_run)
+
+    bench_dir = tmp_path / "bench"
+    (bench_dir / "prompts").mkdir(parents=True)
+    (bench_dir / "prompts" / "coding.jsonl").write_text("")
+
+    r = runner.invoke(app, ["bench", "run", str(bench_dir)])
+    assert r.exit_code == 0
+    with get_session() as s:
+        tag_count = s.scalar(select(func.count()).select_from(PromptTag))
+    assert tag_count > 0, (
+        "bench run finished but no PromptTag rows -- classify step missing"
+    )
