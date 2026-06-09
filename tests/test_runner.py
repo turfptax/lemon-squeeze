@@ -130,3 +130,41 @@ def test_execute_run_merges_extra_metadata():
         )
 
     assert run.run_metadata == {"system": "be terse", "trace_id": "abc-123"}
+
+
+def test_execute_run_collapses_multiline_httpx_error_to_one_line():
+    """Caught against real LM Studio: when the server returns 500 (model
+    swapping in/out of VRAM), httpx.HTTPStatusError stringifies as TWO
+    lines -- the actual error, then "For more information check: <MDN URL>".
+    With 18 errors in a bench run, the per-row error printout becomes
+    unreadable garbage as each error spans 3-4 terminal lines. Collapse
+    to one line at storage so the DB column, bench output, JSON export,
+    and HTML report are all clean."""
+    import httpx
+
+    pid, mid = _seed_prompt_and_model()
+    with get_session() as s:
+        prompt = s.get(Prompt, pid)
+        model = s.get(Model, mid)
+
+    fake_response = httpx.Response(500, request=httpx.Request("POST", "http://x/y"))
+    err = httpx.HTTPStatusError(
+        "Server error '500 Internal Server Error' for url 'http://x/y'\n"
+        "For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
+        request=fake_response.request, response=fake_response,
+    )
+    with patch("lemon_squeeze.eval.runner.ChatClient") as cls:
+        cls.return_value.chat.side_effect = err
+        run = execute_run(prompt, model)
+
+    assert run.error is not None
+    assert "\n" not in run.error, (
+        f"Run.error should be single-line; got {run.error!r}"
+    )
+    # The actual error info is preserved.
+    assert "500" in run.error
+    assert "http://x/y" in run.error
+    # The MDN URL boilerplate is dropped (pure noise, same URL for every
+    # status code in that class).
+    assert "developer.mozilla.org" not in run.error
+    assert "For more information check" not in run.error

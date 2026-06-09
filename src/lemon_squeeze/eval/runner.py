@@ -93,7 +93,14 @@ def execute_run(
         run.latency_ms = result.latency_ms
         run.cost_usd = result.cost_usd
     except httpx.HTTPError as e:
-        run.error = f"http_error: {e}"
+        # httpx's HTTPStatusError stringifies as TWO lines: the actual error,
+        # then "For more information check: <MDN URL>". When N runs fail (model
+        # swap, network flake), the per-row error printout becomes unreadable
+        # garbage. Strip the MDN tail entirely (same URL for every status code,
+        # pure noise) and keep the meaningful first line for the DB column,
+        # bench output, JSON export, and HTML report.
+        msg = str(e).split("\n", 1)[0].strip()
+        run.error = f"http_error: {msg}"
     except (KeyError, IndexError, ValueError, TypeError) as e:
         # IndexError covers the case where the API returns 200 OK with an
         # empty `choices` array — ChatClient.chat would IndexError on
