@@ -222,3 +222,53 @@ def test_eval_score_with_no_runs_in_db():
     r = runner.invoke(app, ["eval", "score", "rubrics/contains_python_block.yaml"])
     assert r.exit_code == 0
     assert "evaluated" in r.stdout
+
+
+# ---------- providers sync persists size_b ----------------------------------
+
+
+def test_providers_sync_persists_size_b_from_discovery(monkeypatch):
+    """Caught against real LM Studio: `providers sync` only wrote
+    provider/family/context_window/cost; `size_params_b` was dropped on the
+    floor on both insert and update paths even when
+    `DiscoveredModel.size_params_b` was populated. Net effect: router showed
+    "?" for every freshly-discovered LM Studio model because the size axis
+    had nothing to score against."""
+    from sqlalchemy import select
+
+    from lemon_squeeze.db import Model, get_session
+    from lemon_squeeze.providers import DiscoveredModel
+
+    def fake_list_lm_studio():
+        return [
+            DiscoveredModel(
+                provider="lm_studio", name="qwen3.5-2b",
+                family="qwen3.5", size_params_b=2.0,
+            ),
+            DiscoveredModel(
+                provider="lm_studio", name="smollm2-135m-instruct",
+                family="smollm2", size_params_b=0.135,
+            ),
+        ]
+
+    monkeypatch.setattr(
+        "lemon_squeeze.cli.list_lm_studio_models", fake_list_lm_studio
+    )
+
+    # Insert path: model doesn't exist yet.
+    r = runner.invoke(app, ["providers", "sync"])
+    assert r.exit_code == 0
+    with get_session() as s:
+        qwen = s.scalar(select(Model).where(Model.name == "qwen3.5-2b"))
+        smol = s.scalar(select(Model).where(Model.name == "smollm2-135m-instruct"))
+    assert qwen.size_params_b == 2.0, "insert path dropped size_params_b"
+    assert smol.size_params_b == 0.135
+
+    # Update path: model already exists with no size; sync should fill it in.
+    with get_session() as s:
+        m = s.scalar(select(Model).where(Model.name == "qwen3.5-2b"))
+        m.size_params_b = None  # simulate the pre-fix state
+    runner.invoke(app, ["providers", "sync"])
+    with get_session() as s:
+        qwen2 = s.scalar(select(Model).where(Model.name == "qwen3.5-2b"))
+    assert qwen2.size_params_b == 2.0, "update path dropped size_params_b"

@@ -11,12 +11,32 @@ models into the DB in one shot.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
 from lemon_squeeze.config import settings
+
+
+def _guess_size_b_from_name(name: str) -> float | None:
+    """Best-effort parse of parameter count from a model name.
+
+    LM Studio's `/v1/models` doesn't advertise size, but model IDs almost
+    always encode it: `qwen3.5-2b` -> 2.0, `smollm2-135m-instruct` -> 0.135.
+    Returns None for names without an obvious size token (e.g., embedding
+    models). Use `\\b<digits>(?:.<digits>)?b\\b` for billions and same for
+    millions / 1000. The `\\b` matters: "gemma-3-4b" must not match "3" via
+    a substring scan.
+    """
+    m = re.search(r"\b(\d+(?:\.\d+)?)b\b", name, re.IGNORECASE)
+    if m:
+        return float(m.group(1))
+    m = re.search(r"\b(\d+(?:\.\d+)?)m\b", name, re.IGNORECASE)
+    if m:
+        return float(m.group(1)) / 1000.0
+    return None
 
 
 @dataclass
@@ -59,9 +79,10 @@ def list_lm_studio_models(
                 provider="lm_studio",
                 name=model_id,
                 family=_guess_family(model_id),
-                # LM Studio's /models doesn't advertise context window or size,
-                # so leave those None — the user can fill them in with
-                # `lemon models register --size-b ... --ctx ...`.
+                # Size is parsed best-effort from the model name (`qwen3.5-2b`
+                # -> 2.0). LM Studio's /models doesn't advertise context window
+                # or cost, so those stay None until the user fills them in.
+                size_params_b=_guess_size_b_from_name(model_id),
                 raw=entry,
             )
         )

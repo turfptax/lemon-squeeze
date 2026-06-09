@@ -166,3 +166,52 @@ def test_discovered_model_is_dataclass():
     assert m.provider == "lm_studio"
     assert m.family is None
     assert m.context_window is None
+
+
+# ---------- size-from-name heuristic ----------------------------------------
+
+
+def test_guess_size_b_parses_billions_and_millions():
+    from lemon_squeeze.providers import _guess_size_b_from_name
+
+    # Billions: real model IDs LM Studio surfaces.
+    assert _guess_size_b_from_name("qwen3.5-2b") == 2.0
+    assert _guess_size_b_from_name("qwen3.5-0.8b") == 0.8
+    assert _guess_size_b_from_name("google/gemma-3-4b") == 4.0
+    assert _guess_size_b_from_name("google/gemma-4-26b-a4b") == 26.0  # 26b, not 4b
+    assert _guess_size_b_from_name("qwen/qwen3.5-35b-a3b") == 35.0
+    # Millions get divided by 1000.
+    assert _guess_size_b_from_name("smollm2-135m-instruct") == 0.135
+    # No size token in the name → None.
+    assert _guess_size_b_from_name("text-embedding-nomic-embed-text-v1.5") is None
+    assert _guess_size_b_from_name("randomthing") is None
+
+
+def test_lm_studio_discovery_fills_size_b(monkeypatch):
+    """End-to-end: list_lm_studio_models populates size_params_b from the
+    model ID. Catches both the heuristic and its plumb-through to
+    DiscoveredModel."""
+    from lemon_squeeze.providers import DiscoveredModel, list_lm_studio_models
+
+    class FakeResp:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self):
+            return {"data": [
+                {"id": "qwen3.5-2b"},
+                {"id": "smollm2-135m-instruct"},
+                {"id": "text-embedding-nomic-embed-text-v1.5"},
+            ]}
+
+    class FakeClient:
+        def __init__(self, *a, **kw): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def get(self, *a, **kw): return FakeResp()
+
+    monkeypatch.setattr("lemon_squeeze.providers.httpx.Client", FakeClient)
+    models = list_lm_studio_models()
+    by_name = {m.name: m for m in models}
+    assert by_name["qwen3.5-2b"].size_params_b == 2.0
+    assert by_name["smollm2-135m-instruct"].size_params_b == 0.135
+    assert by_name["text-embedding-nomic-embed-text-v1.5"].size_params_b is None

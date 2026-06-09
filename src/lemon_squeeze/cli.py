@@ -1353,6 +1353,7 @@ def providers_sync(
                 for attr, val in (
                     ("provider", m.provider),
                     ("family", m.family),
+                    ("size_params_b", m.size_params_b),
                     ("context_window", m.context_window),
                     ("cost_in_per_mtok", m.cost_in_per_mtok),
                     ("cost_out_per_mtok", m.cost_out_per_mtok),
@@ -1367,6 +1368,7 @@ def providers_sync(
                     provider=m.provider,
                     family=m.family,
                     local=(m.provider == "lm_studio"),
+                    size_params_b=m.size_params_b,
                     context_window=m.context_window,
                     cost_in_per_mtok=m.cost_in_per_mtok,
                     cost_out_per_mtok=m.cost_out_per_mtok,
