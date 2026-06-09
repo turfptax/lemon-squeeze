@@ -61,6 +61,49 @@ def test_load_ingests_all_jsonl_files(tmp_path: Path):
     assert any(m["intended_tag"] == "math" for m in metas)
 
 
+def test_load_writes_ground_truth_tags_from_intended_tag(tmp_path: Path):
+    """Bench JSONL files declare their category via `intended_tag`, but the
+    per-tag surfaces (report scorecard, route pick, dashboard heatmap)
+    aggregate over PromptTag rows. Before this step, those rows only came
+    from the heuristic classifier guessing the category back from the text:
+    in a real run of benchmarks/starter all 4 reasoning prompts landed under
+    "unknown". load() must persist the declared category as a PromptTag with
+    classifier="bench" at confidence 1.0."""
+    from lemon_squeeze.db import PromptTag
+
+    d = _make_bench(tmp_path)
+    bench_mod.load(d)
+
+    with get_session() as s:
+        tags = list(
+            s.scalars(
+                select(PromptTag).where(
+                    PromptTag.classifier == bench_mod.BENCH_TAG_CLASSIFIER
+                )
+            ).all()
+        )
+    by_tag = {}
+    for t in tags:
+        by_tag.setdefault(t.tag, 0)
+        by_tag[t.tag] += 1
+    assert by_tag == {"math": 2, "qa_factual": 1}
+    assert all(t.confidence == 1.0 for t in tags)
+
+    # Idempotent: a second load writes no duplicate tag rows.
+    bench_mod.load(d)
+    with get_session() as s:
+        n_after = len(
+            list(
+                s.scalars(
+                    select(PromptTag).where(
+                        PromptTag.classifier == bench_mod.BENCH_TAG_CLASSIFIER
+                    )
+                ).all()
+            )
+        )
+    assert n_after == len(tags)
+
+
 def test_run_scores_per_prompt_expected(tmp_path: Path):
     d = _make_bench(tmp_path)
     with get_session() as s:

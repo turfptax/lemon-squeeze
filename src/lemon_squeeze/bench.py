@@ -30,12 +30,13 @@ from pathlib import Path
 from sqlalchemy import select
 
 from lemon_squeeze.aggregations import aggregate_by_intended_tag_model
-from lemon_squeeze.db import Prompt, Run, get_session
+from lemon_squeeze.db import Prompt, PromptTag, Run, get_session
 from lemon_squeeze.eval.rubric import Rubric, evaluate_runs
 from lemon_squeeze.eval.runner import fanout
 from lemon_squeeze.ingestion.self_generated import SeedFileIngester
 
 BENCH_EXPECTED_RUBRIC = "bench:expected_contains"
+BENCH_TAG_CLASSIFIER = "bench"
 
 # The standard rubric used to score bench prompts against their per-prompt
 # `expected_contains` ground truth. Lives here rather than in rubrics/ so it
@@ -115,7 +116,55 @@ def load(bench_dir: Path) -> tuple[int, int]:
         result = SeedFileIngester(jsonl, metadata_overlay=overlay).run()
         inserted += result.inserted
         duplicates += result.duplicates
+    _tag_intended(bench_dir)
     return inserted, duplicates
+
+
+def _tag_intended(bench_dir: Path) -> int:
+    """Write ground-truth PromptTag rows from each bench prompt's
+    `intended_tag` metadata (classifier="bench", confidence=1.0).
+
+    Bench JSONL files declare their category outright, but until this step
+    the only PromptTags came from the heuristic/ML classifiers guessing it
+    back from the prompt text -- and guessing imperfectly. In a real run of
+    benchmarks/starter, the 4 reasoning prompts all landed under "unknown"
+    and 3 of 5 math prompts were missed, so every per-tag surface (report
+    scorecard, route pick, dashboard heatmap) was aggregating over wrong
+    tags while bench's own per-category table used the truth. Idempotent:
+    skips (prompt, tag) pairs that already have a bench-classifier row.
+    """
+    marker = _bench_dir_marker(bench_dir)
+    written = 0
+    with get_session() as s:
+        existing = {
+            (pt.prompt_id, pt.tag)
+            for pt in s.query(PromptTag).filter(
+                PromptTag.classifier == BENCH_TAG_CLASSIFIER
+            )
+        }
+        rows = s.execute(
+            select(Prompt.id, Prompt.source_metadata).where(
+                Prompt.source == "self_generated:seed"
+            )
+        ).all()
+        for pid, meta in rows:
+            if not meta or meta.get(_BENCH_DIR_META_KEY) != marker:
+                continue
+            tag = meta.get("intended_tag")
+            if not isinstance(tag, str) or not tag:
+                continue
+            if (pid, tag) in existing:
+                continue
+            s.add(
+                PromptTag(
+                    prompt_id=pid,
+                    tag=tag,
+                    classifier=BENCH_TAG_CLASSIFIER,
+                    confidence=1.0,
+                )
+            )
+            written += 1
+    return written
 
 
 def run(
