@@ -34,7 +34,7 @@ from dataclasses import asdict
 from sqlalchemy import select
 
 from lemon_squeeze.cache import cache_stats
-from lemon_squeeze.classification import build_default_classifier
+from lemon_squeeze.classification import resolve_classifier
 from lemon_squeeze.compare import compare as compare_models
 from lemon_squeeze.db import Model, get_session
 from lemon_squeeze.report import build_report, headline_stats
@@ -55,6 +55,8 @@ class RouteRequest(BaseModel):
 
 class ClassifyRequest(BaseModel):
     prompt: str
+    classifier: str = "ensemble"  # heuristic | ml | ensemble — same as the CLI
+    top: int = 0  # keep only the N highest-confidence predictions; 0 = all
 
 
 class CompareRequest(BaseModel):
@@ -146,8 +148,13 @@ def create_app() -> FastAPI:
 
     @app.post("/classify")
     def classify(req: ClassifyRequest) -> dict[str, Any]:
-        classifier = build_default_classifier()
-        preds = classifier.predict(req.prompt)
+        try:
+            classifier = resolve_classifier(req.classifier)
+        except (ValueError, FileNotFoundError) as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        preds = sorted(classifier.predict(req.prompt), key=lambda p: -p.confidence)
+        if req.top > 0:
+            preds = preds[: req.top]
         return {
             "predictions": [
                 {"tag": p.tag, "confidence": p.confidence, "classifier": p.classifier}

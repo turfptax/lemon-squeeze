@@ -71,6 +71,32 @@ def build_default_classifier() -> EnsembleClassifier:
     return EnsembleClassifier(members)
 
 
+def resolve_classifier(name: str) -> Classifier:
+    """Map a user-supplied classifier name to an instance.
+
+    Shared by the CLI (`lemon classify ask --classifier`) and the HTTP
+    server (`POST /classify`) so the two surfaces accept the same names
+    and fail with the same message. Raises ValueError for an unknown name
+    (usage error) and FileNotFoundError for "ml" with no trained model
+    (precondition error); callers translate those to their surface's
+    convention (CLI exit 2 / exit 1, HTTP 400).
+    """
+    if name == "heuristic":
+        return HeuristicClassifier()
+    if name == "ml":
+        loaded = MLClassifier.load()
+        if loaded is None:
+            raise FileNotFoundError(
+                "No trained ML classifier found; run `lemon classify train-ml` first."
+            )
+        return loaded
+    if name == "ensemble":
+        return build_default_classifier()
+    raise ValueError(
+        f"Unknown classifier: {name!r} (choices: heuristic, ml, ensemble)"
+    )
+
+
 def classify_unlabeled(
     classifier: Classifier | None = None,
     *,

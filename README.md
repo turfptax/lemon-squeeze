@@ -42,16 +42,15 @@ Copy-Item .env.example .env
 # create the SQLite DB
 lemon db init
 
-# ingest some prompts
+# ingest some prompts (each command auto-classifies what it inserts; --no-classify to skip)
 lemon ingest lm-studio                  # walks LM_STUDIO_LOGS_DIR
 lemon ingest claude path/to/export.json # Claude data export
 lemon ingest openrouter --since 7d      # last 7 days of generations
 lemon ingest ai-harness                 # full import from sibling AI Harness DB
 
-# classify everything that's untagged
-lemon classify run
-
-# register a model so it can be used for runs / routing
+# register models: sync discovers them from providers (and parses size from the
+# model name, e.g. qwen3.5-2b -> 2.0B), or register one by hand
+lemon providers sync
 lemon models register "lm_studio/llama-3.1-8b" --local --size-b 8 --ctx 8192
 lemon models list
 
@@ -76,9 +75,9 @@ lemon report
 # changed a rubric? wipe its old evaluations and re-score everything
 lemon eval replay rubrics/contains_python_block.yaml
 
-# train the ML classifier from accumulated labels (the heuristic bootstraps it)
+# train the ML classifier from accumulated labels (the heuristic bootstraps it);
+# back-fills ML tags on existing prompts automatically (--no-backfill to skip)
 lemon classify train-ml
-lemon classify run --only-missing ml      # back-fill ML tags on previously-tagged prompts
 
 # back up your DB (or share it) as JSONL — round-trip safe
 lemon export ./snapshots/2026-06-07
@@ -213,5 +212,5 @@ The shipped `benchmarks/starter/` has 30 prompts across 7 categories (coding, ma
 - [x] Dashboard sections for `compare` and `report` (six-tab UI)
 - [x] Setup diagnostic (`lemon doctor`)
 - [x] Public Python API (`import lemon_squeeze as lemon` — full surface re-exported)
-- [ ] Per-rubric freshness tracking (when was each rubric last applied?)
-- [ ] Real end-to-end run against a local LM Studio model (we've mocked it, but not driven a real model yet)
+- [x] Per-rubric freshness tracking (when was each rubric last applied?)
+- [x] Real end-to-end run against a local LM Studio model (full starter bench driven against live models over the LAN)

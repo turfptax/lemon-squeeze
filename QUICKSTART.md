@@ -138,8 +138,8 @@ curl -X POST http://localhost:8080/route \
           "threshold": 0.7,
           "min_samples": 3}'
 
-# /report — JSON exec summary
-curl http://localhost:8080/report
+# /report — JSON exec summary; takes the same knobs as `lemon report`
+curl "http://localhost:8080/report?threshold=0.5&min_samples=1&rubric=bench:expected_contains"
 
 # /compare
 curl -X POST http://localhost:8080/compare \

@@ -4,11 +4,28 @@ All notable changes to Lemon Squeeze. Dates are local (project lives on one mach
 
 ## [Unreleased]
 
+Everything below was found by driving the harness against real LM Studio models over the LAN (the repo went public and the live integration finally happened). The pattern held: every real-usage scenario surfaced something that code review alone had not.
+
 ### Added
 
 - **PEP 561 `py.typed` marker** so downstream consumers who import `lemon_squeeze` in code checked by mypy/pyright see the project's inline type annotations. Empty file is enough; tells type-checkers "this package's source IS the type stubs." Hatchling picks it up automatically. (Commit `bcfb510`.)
 - **LICENSE file** with canonical MIT text. `pyproject.toml` has declared `license = "MIT"` since project start but the actual license text wasn't in the repo, so PyPI installs would have shipped metadata only and GitHub wouldn't show a license badge. (Commit `9b32179`.)
 - **`.gitattributes`** with `* text=auto eol=lf` plus binary exceptions for png/jpg/pdf/db/sqlite/joblib/pyc. Stops the "LF will be replaced by CRLF" warning chorus on every Windows commit and standardizes the repo's stored line endings. (Commit `9b32179`.)
+- **Size-from-name heuristic on provider discovery.** LM Studio's `/v1/models` doesn't advertise parameter counts, so `lemon providers sync` left every model's `size_params_b` empty and the router's size axis scored all candidates identically. Discovery now parses `Nb`/`Nm` tokens from the model id (`qwen3.5-2b` -> 2.0, `smollm2-135m-instruct` -> 0.135) and sync persists the value on both insert and update paths. (Commit `3b87239`.)
+- **`lemon eval run --workers/-j`** for parity with `lemon bench run -j`; the fanout was already parallel internally but the concurrency wasn't tunable from this command.
+- **`POST /classify` accepts `classifier` and `top`** mirroring `lemon classify ask --classifier/--top`. Classifier-name resolution is now shared between the CLI and the server (`resolve_classifier`), so both surfaces accept the same names and fail with the same message.
+- **Bench prompts get ground-truth tags.** Bench JSONL files declare their category via `intended_tag`, but the per-tag surfaces (report scorecard, route pick, dashboard heatmap) aggregate over PromptTag rows, which only the heuristic/ML classifiers populated -- by guessing the category back from the prompt text, imperfectly. In a real starter-bench run all 4 reasoning prompts landed under "unknown" and 3 of 5 math prompts were missed. `bench load` now persists each prompt's declared category as a PromptTag (classifier="bench", confidence=1.0).
+
+### Fixed
+
+- **`bench run` skipped auto-classification.** `bench load` classified what it ingested; `bench run` (load + fanout + score in one shot) did not, so prompts loaded that way had no tags at all and every per-tag surface rendered empty. The CLI command now runs the same auto-classify step (and takes `--no-classify`). (Commit `cc910aa`.)
+- **`GET /report` ignored all query parameters.** The handler took none, silently using `rubric=human_pass, min_samples=3, threshold=0.7`; anyone who benched under `bench:expected_contains` got an empty scorecard from the API while the CLI showed data. The endpoint now accepts `threshold`, `min_samples`, and repeated `rubric` params, mirroring the CLI. (Commit `b8e63a0`.)
+- **Run.error stored httpx's two-line MDN boilerplate.** Under LM Studio model-swap pressure (18 failures in one 30-prompt run) the bench error printout wrapped 3-4 terminal lines per failure. The stored message now keeps only the meaningful first line: `http_error: timed out`. (Commit `45f3dfa`.)
+- **Dashboard report + router sections hardcoded the `human_pass` rubric** (a text default in the router playground, no control at all in the report section). Both now offer a selectbox of the rubric names that actually have Evaluation rows.
+
+### Docs
+
+- README quick-start no longer shows manual `lemon classify run` / post-train backfill steps that have been automatic since v0.2.2; roadmap items for per-rubric freshness and the live LM Studio end-to-end are checked off; QUICKSTART documents `/report` query parameters.
 
 ## [0.2.5] — 2026-06-08
 

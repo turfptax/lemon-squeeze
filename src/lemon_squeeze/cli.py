@@ -797,31 +797,16 @@ def classify_ask(
     """
     import json as _json
 
-    from lemon_squeeze.classification import (
-        HeuristicClassifier,
-        MLClassifier,
-        build_default_classifier,
-    )
+    from lemon_squeeze.classification import resolve_classifier
 
-    if classifier == "heuristic":
-        clf = HeuristicClassifier()
-    elif classifier == "ml":
-        loaded = MLClassifier.load()
-        if loaded is None:
-            console.print(
-                "[yellow]No trained ML classifier found.[/yellow] "
-                "Run [bold]lemon classify train-ml[/bold] first."
-            )
-            raise typer.Exit(code=1)
-        clf = loaded
-    elif classifier == "ensemble":
-        clf = build_default_classifier()
-    else:
-        console.print(
-            f"[red]Unknown classifier:[/red] {classifier!r} "
-            f"(choices: heuristic, ml, ensemble)"
-        )
-        raise typer.Exit(code=2)
+    try:
+        clf = resolve_classifier(classifier)
+    except FileNotFoundError as e:
+        console.print(f"[yellow]{e}[/yellow]")
+        raise typer.Exit(code=1) from e
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=2) from e
 
     preds = clf.predict(prompt)
     preds_sorted = sorted(preds, key=lambda p: -p.confidence)
@@ -986,6 +971,7 @@ def eval_run(
     temperature: float = typer.Option(0.0, "--temp"),
     max_tokens: int = typer.Option(None, "--max-tokens"),
     force: bool = typer.Option(False, "--force", help="Re-run even if a Run already exists."),
+    workers: int = typer.Option(4, "--workers", "-j", help="Parallel requests."),
 ) -> None:
     """Execute prompts against models and save Run rows."""
     report = fanout(
@@ -994,6 +980,7 @@ def eval_run(
         temperature=temperature,
         max_tokens=max_tokens,
         skip_existing=not force,
+        max_workers=workers,
     )
     console.print(
         f"attempted: {report.attempted}, succeeded: [green]{report.succeeded}[/green], "

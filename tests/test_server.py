@@ -117,6 +117,25 @@ def test_route_returns_no_pick_when_no_data(client: TestClient):
 # ---------- /classify -------------------------------------------------------
 
 
+def test_classify_honors_classifier_and_top(client: TestClient):
+    """POST /classify mirrors `lemon classify ask`: optional `classifier`
+    (heuristic|ml|ensemble) and `top` (N highest-confidence). Previously the
+    endpoint always ran the full ensemble and returned every prediction."""
+    r = client.post(
+        "/classify",
+        json={"prompt": "Write a Python sort function", "classifier": "heuristic", "top": 1},
+    )
+    assert r.status_code == 200
+    preds = r.json()["predictions"]
+    assert len(preds) == 1
+    assert all(p["classifier"] == "heuristic" for p in preds)
+
+    # Unknown classifier name -> 400 with the shared error message.
+    r = client.post("/classify", json={"prompt": "x", "classifier": "nonsense"})
+    assert r.status_code == 400
+    assert "Unknown classifier" in r.json()["detail"]
+
+
 def test_classify_returns_predictions(client: TestClient):
     r = client.post("/classify", json={"prompt": "Write a Python function that does X."})
     body = r.json()

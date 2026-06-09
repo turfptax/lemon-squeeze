@@ -192,7 +192,9 @@ def _section_router_playground() -> None:
     threshold = cols[0].slider("Pass threshold", 0.0, 1.0, 0.7, 0.05)
     min_samples = cols[1].number_input("Min samples", 1, 100, 3)
     preset_name = cols[2].selectbox("Preset", list(PRESETS), index=0)
-    rubric = cols[3].text_input("Authoritative rubric", value="human_pass")
+    rubric = cols[3].selectbox(
+        "Authoritative rubric", _distinct_rubrics(), key="router_rubric"
+    )
 
     base = PRESETS[preset_name]
     st.write("**Custom weights** (override the preset):")
@@ -328,6 +330,26 @@ def _section_compare() -> None:
 # ---------- Section 6: executive report --------------------------------------
 
 
+def _distinct_rubrics(default: str = "human_pass") -> list[str]:
+    """Rubric names that actually have Evaluation rows, with `default` first.
+
+    Surfaces that take a rubric should offer what's really in the DB instead
+    of a free-text default. A user who just ran `lemon bench run` has all
+    their evals under "bench:expected_contains"; pointing them at a
+    hardcoded "human_pass" produces an empty scorecard with no hint why.
+    """
+    with get_session() as s:
+        names = sorted(
+            r for (r,) in s.execute(select(Evaluation.rubric).distinct()).all()
+        )
+    if default in names:
+        names.remove(default)
+        names.insert(0, default)
+    elif not names:
+        names = [default]
+    return names
+
+
 def _section_report() -> None:
     st.subheader("Executive report")
     st.caption(
@@ -335,13 +357,20 @@ def _section_report() -> None:
         "next actions. Same data as `lemon report`."
     )
 
-    cols = st.columns(2)
+    cols = st.columns(3)
     threshold = cols[0].slider("Pass threshold", 0.0, 1.0, 0.7, 0.05, key="report_thr")
     min_samples = cols[1].number_input(
         "Min samples", 1, 100, 3, key="report_min_samples"
     )
+    rubric = cols[2].selectbox(
+        "Authoritative rubric", _distinct_rubrics(), key="report_rubric"
+    )
 
-    rep = build_report(threshold=threshold, min_samples=int(min_samples))
+    rep = build_report(
+        threshold=threshold,
+        min_samples=int(min_samples),
+        authoritative_rubrics=(rubric,),
+    )
 
     metric_cols = st.columns(5)
     metric_cols[0].metric("Prompts", rep.n_prompts)
